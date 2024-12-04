@@ -186,6 +186,36 @@ fi
 
 echo "System hardening completed."
 
+# 9. UFW Configuration
+read -p "Do you want to configure UFW firewall? (y/n): " configure_ufw
+if [[ "$configure_ufw" =~ ^[Yy]$ ]]; then
+    # Check if UFW is installed
+    if ! command -v ufw >/dev/null 2>&1; then
+        echo "UFW is not installed. Installing UFW..."
+        apt update
+        apt install -y ufw
+    fi
+    
+    # Reset UFW to default settings
+    echo "Resetting UFW to default settings..."
+    ufw --force reset
+    
+    # Download and execute UFW configuration script
+    echo "Downloading and executing UFW configuration script..."
+    wget https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh
+    if [[ -f "ufw.sh" ]]; then
+        chmod +x ufw.sh
+        bash ./ufw.sh
+        rm -f ufw.sh
+        
+        # Enable UFW
+        echo "Enabling UFW..."
+        ufw --force enable
+    else
+        echo "Failed to download UFW configuration script."
+    fi
+fi
+
 # Self-delete the script
 rm -- "$0"
 
