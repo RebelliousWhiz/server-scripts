@@ -216,6 +216,46 @@ if [[ "$configure_ufw" =~ ^[Yy]$ ]]; then
     fi
 fi
 
+# 10. Time Synchronization
+read -p "Do you want to sync time with time.nist.gov? (y/n): " sync_time
+if [[ "$sync_time" =~ ^[Yy]$ ]]; then
+    echo "Configuring time synchronization..."
+    
+    # Stop and disable existing time sync services
+    systemctl stop systemd-timesyncd 2>/dev/null
+    systemctl disable systemd-timesyncd 2>/dev/null
+    systemctl stop ntp 2>/dev/null
+    systemctl disable ntp 2>/dev/null
+    systemctl stop chronyd 2>/dev/null
+    systemctl disable chronyd 2>/dev/null
+    
+    # Remove chrony if installed (optional, but prevents conflicts)
+    if dpkg -l | grep -q "chrony"; then
+        apt remove --purge chrony -y
+    fi
+    
+    # Check and install ntpdate if needed
+    if ! command -v ntpdate >/dev/null 2>&1; then
+        echo "Installing ntpdate..."
+        apt update
+        apt install -y ntpdate
+    fi
+    
+    # Perform initial time sync
+    echo "Performing initial time sync..."
+    ntpdate -4 time.nist.gov
+    
+    # Add cron job for periodic sync
+    if ! grep -q "ntpdate -4 -s time.nist.gov" /etc/crontab; then
+        echo "00 */6  * * *   root  ntpdate -4 -s time.nist.gov" >> /etc/crontab
+        echo "Cron job added for periodic time sync every 6 hours"
+    else
+        echo "Time sync cron job already exists"
+    fi
+    
+    echo "Time synchronization configured successfully"
+fi
+
 # Self-delete the script
 rm -- "$0"
 
