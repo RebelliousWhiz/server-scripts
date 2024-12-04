@@ -117,6 +117,73 @@ else
   echo "Unsupported OS for SSH restart. Please check the OS type."
 fi
 
+# 7. IPv6 Disable Option
+read -p "Do you want to disable IPv6? (y/n): " disable_ipv6
+if [[ "$disable_ipv6" =~ ^[Yy]$ ]]; then
+    # Backup the original grub file
+    cp /etc/default/grub /etc/default/grub.backup
+    
+    # Modify GRUB_CMDLINE_LINUX_DEFAULT
+    if grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub; then
+        current_default=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
+        if [ -z "$current_default" ]; then
+            # Empty value
+            sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"/' /etc/default/grub
+        else
+            # Has existing value
+            sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+        fi
+    else
+        echo 'GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"' >> /etc/default/grub
+    fi
+    
+    # Modify GRUB_CMDLINE_LINUX
+    if grep -q "^GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+        current_linux=$(grep "^GRUB_CMDLINE_LINUX=" /etc/default/grub | cut -d'"' -f2)
+        if [ -z "$current_linux" ]; then
+            # Empty value
+            sed -i 's/GRUB_CMDLINE_LINUX=""/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' /etc/default/grub
+        else
+            # Has existing value
+            sed -i '/GRUB_CMDLINE_LINUX=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+        fi
+    else
+        echo 'GRUB_CMDLINE_LINUX="ipv6.disable=1"' >> /etc/default/grub
+    fi
+    
+    # Update grub
+    if [[ "$OS" == "debian" ]] || [[ "$OS" == "ubuntu" ]]; then
+        update-grub
+    else
+        echo "Unsupported OS for grub update. Please update grub manually."
+    fi
+    
+    echo "IPv6 has been disabled. Please reboot your system for changes to take effect."
+fi
+
+# 8. Remove Snap and prevent its installation (Ubuntu only)
+if [[ "$OS" == "ubuntu" ]]; then
+    echo "Removing Snap and preventing its reinstallation..."
+    
+    # Remove all snap packages
+    snap list 2>/dev/null | awk 'NR>1 {print $1}' | while read pkg; do
+        snap remove --purge "$pkg" 2>/dev/null
+    done
+    
+    # Remove snapd completely
+    apt remove --purge snapd -y
+    rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd
+    
+    # Prevent snapd from being installed again
+    cat > /etc/apt/preferences.d/nosnap.pref <<EOL
+Package: snapd
+Pin: release a=*
+Pin-Priority: -1
+EOL
+    
+    echo "Snap has been removed and blocked from future installation."
+fi
+
 echo "System hardening completed."
 
 # Self-delete the script
