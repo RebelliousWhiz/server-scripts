@@ -13,6 +13,7 @@ sudo ufw allow 3480/tcp
 sudo ufw allow 3544/udp
 sudo ufw allow 4244/tcp
 sudo ufw allow 4500/udp
+sudo ufw allow 5000
 sudo ufw allow 5222:5242/tcp
 sudo ufw allow 8080/tcp
 sudo ufw deny 11000
