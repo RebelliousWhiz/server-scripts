@@ -21,6 +21,7 @@ sudo ufw deny 11200
 sudo ufw deny 11300
 sudo ufw deny 11400
 sudo ufw deny 12000
+sudo ufw deny 12100
 sudo ufw deny 13000
 sudo ufw deny 13100
 sudo ufw allow 14000:15000/tcp
