@@ -234,11 +234,11 @@ if [[ "$sync_time" =~ ^[Yy]$ ]]; then
         apt remove --purge chrony -y
     fi
     
-    # Check and install ntpdate if needed
+    # Check and install ntpdate and ntp if needed
     if ! command -v ntpdate >/dev/null 2>&1; then
-        echo "Installing ntpdate..."
+        echo "Installing ntpdate and ntp..."
         apt update
-        apt install -y ntpdate
+        apt install -y ntpdate ntp
     fi
     
     # Perform initial time sync
