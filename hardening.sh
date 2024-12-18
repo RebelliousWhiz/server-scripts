@@ -22,23 +22,31 @@ echo "Starting system hardening..."
 # Detect the operating system
 detect_os
 
-# 1. Uncomment the force_color_prompt for all users, including root
+# 1. Handle 'force_color_prompt' for all users, including root
 for user_home in /root /home/*; do
   if [[ -d "$user_home" ]]; then
-    if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
-      sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
+    if [[ "$OS" == "ubuntu" ]]; then
+      if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
+        sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
+      fi
+    elif [[ "$OS" == "debian" ]]; then
+      echo "force_color_prompt=yes" >> "$user_home/.bashrc"
     fi
   fi
 done
 
-# 2. Change specific PS1 prompt in /root/.bashrc
-sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
-if [ "$color_prompt" = yes ]; then\
+# 2. Modify PS1 prompt in /root/.bashrc
+if [[ "$OS" == "ubuntu" ]]; then
+  sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
+  if [ "$color_prompt" = yes ]; then\
     PS1='\''${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '\''\
-else\
+  else\
     PS1='\''${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ '\''\
-fi\
-unset color_prompt force_color_prompt' /root/.bashrc
+  fi\
+  unset color_prompt force_color_prompt' /root/.bashrc
+elif [[ "$OS" == "debian" ]]; then
+  echo "PS1='${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '" >> /root/.bashrc
+fi
 
 # 3. Create .vimrc for all users and root
 for user_home in /root /home/*; do
