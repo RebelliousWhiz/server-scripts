@@ -17,6 +17,26 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
+# Ensure sudo is installed
+if ! command -v sudo >/dev/null 2>&1; then
+  echo "sudo is not installed. Installing sudo..."
+  apt update
+  apt install -y sudo
+
+  # Ask user which user account should be added to the sudo group
+  echo "Available users with home directories:"
+  ls /home
+
+  read -p "Please enter the username to add to the sudo group: " username
+  if [[ -d "/home/$username" ]]; then
+    usermod -aG sudo "$username"
+    echo "User '$username' has been added to the sudo group."
+  else
+    echo "User '$username' not found or does not have a home directory in /home."
+    exit 1
+  fi
+fi
+
 echo "Starting system hardening..."
 
 # Detect the operating system
