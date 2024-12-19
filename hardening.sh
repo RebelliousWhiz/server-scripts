@@ -25,7 +25,7 @@ detect_os
 # 1. Handle 'force_color_prompt' for all users, including root
 for user_home in /root /home/*; do
   if [[ -d "$user_home" ]]; then
-    if [[ "$OS" == "ubuntu" ]]; then
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
       if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
         sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
       fi
