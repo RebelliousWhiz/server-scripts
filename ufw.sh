@@ -1,7 +1,7 @@
 #! /bin/bash
 sudo ufw allow 53
 sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
+sudo ufw allow 443
 sudo ufw allow 465/tcp
 sudo ufw allow 500/udp
 sudo ufw allow 993/tcp
