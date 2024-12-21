@@ -18,7 +18,7 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 # Ensure essential packages are installed
-required_packages=("socat" "bash-completion" "wireguard" "vim")
+required_packages=("curl" "wget" "socat" "bash-completion" "wireguard" "vim")
 
 # For Debian, add dnsmasq to the required packages
 if [[ "$OS" == "debian" ]]; then
@@ -121,20 +121,54 @@ done
 
 # 4. Modify user files
 for user_home in /home/*; do
-  if [[ -d "$user_home/.ssh" ]]; then
-    chown root:root "$user_home/.ssh"
-    chmod 755 "$user_home/.ssh"
-  fi
+  if [[ -d "$user_home" ]]; then
+    ssh_dir="$user_home/.ssh"
 
-  if [[ -e "$user_home/.ssh/authorized_keys" ]]; then
-    chown root:root "$user_home/.ssh/authorized_keys"
-    chmod 644 "$user_home/.ssh/authorized_keys"
-  fi
+    # Check if .ssh directory exists, else prompt to create it
+    if [[ ! -d "$ssh_dir" ]]; then
+      read -p "The directory $ssh_dir does not exist. Do you want to create it? (y/n): " create_ssh_dir
+      if [[ "$create_ssh_dir" =~ ^[Yy]$ ]]; then
+        mkdir -p "$ssh_dir"
+        chown $(basename "$user_home"):$(basename "$user_home") "$ssh_dir"
+        chmod 700 "$ssh_dir"
+        echo "$ssh_dir has been created with appropriate permissions."
+      fi
+    fi
 
-  if [[ -e "$user_home/.bash_logout" ]]; then
-    chown root:root "$user_home/.bash_logout"
-    chmod 644 "$user_home/.bash_logout"
-    echo -e "\n# Clear history\nhistory -c\nhistory -w" >> "$user_home/.bash_logout"
+    # Now check and optionally create the authorized_keys file
+    authorized_keys_file="$ssh_dir/authorized_keys"
+    if [[ -d "$ssh_dir" ]] && [[ ! -e "$authorized_keys_file" ]]; then
+      read -p "The file $authorized_keys_file does not exist. Do you want to create it? (y/n): " create_auth_keys
+      if [[ "$create_auth_keys" =~ ^[Yy]$ ]]; then
+        echo "Please enter the content for the authorized_keys file. Type 'END' on a new line to finish:"
+        ssh_key_content=""
+        while IFS= read -r line; do
+          [[ $line == "END" ]] && break
+          ssh_key_content+="$line"$'\n'
+        done
+        echo -n "$ssh_key_content" > "$authorized_keys_file"
+        chown $(basename "$user_home"):$(basename "$user_home") "$authorized_keys_file"
+        chmod 600 "$authorized_keys_file"
+        echo "authorized_keys file has been created and populated for $(basename "$user_home")."
+      fi
+    fi
+    
+    # Subsequent processing of existing .ssh directories and files
+    if [[ -d "$ssh_dir" ]]; then
+      chown root:root "$ssh_dir"
+      chmod 755 "$ssh_dir"
+    fi
+
+    if [[ -e "$authorized_keys_file" ]]; then
+      chown root:root "$authorized_keys_file"
+      chmod 644 "$authorized_keys_file"
+    fi
+
+    if [[ -e "$user_home/.bash_logout" ]]; then
+      chown root:root "$user_home/.bash_logout"
+      chmod 644 "$user_home/.bash_logout"
+      echo -e "\n# Clear history\nhistory -c\nhistory -w" >> "$user_home/.bash_logout"
+    fi
   fi
 done
 
