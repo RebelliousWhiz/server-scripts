@@ -17,6 +17,21 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
+# Ensure essential packages are installed
+required_packages=("socat" "bash-completion" "wireguard" "vim")
+
+# For Debian, add dnsmasq to the required packages
+if [[ "$OS" == "debian" ]]; then
+  required_packages+=("dnsmasq")
+fi
+
+for pkg in "${required_packages[@]}"; do
+  if ! dpkg -l | grep -q "^ii.*$pkg"; then
+    echo "$pkg is not installed. Installing $pkg..."
+    apt update && apt install -y "$pkg"
+  fi
+done
+
 # Ensure sudo is installed
 if ! command -v sudo >/dev/null 2>&1; then
   echo "sudo is not installed. Installing sudo..."
@@ -50,12 +65,12 @@ for user_home in /root /home/*; do
         sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
       fi
     elif [[ "$OS" == "debian" ]]; then
-      echo "force_color_prompt=yes" >> "$user_home/.bashrc"
+      echo "force_color_prompt=yes" >> "/root/.bashrc"
     fi
   fi
 done
 
-# 2. Modify PS1 prompt in /root/.bashrc
+# 2. Modify PS1 prompt in /root/.bashrc and add additional configurations for Debian
 if [[ "$OS" == "ubuntu" ]]; then
   sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
   if [ "$color_prompt" = yes ]; then\
@@ -66,6 +81,18 @@ if [[ "$OS" == "ubuntu" ]]; then
   unset color_prompt force_color_prompt' /root/.bashrc
 elif [[ "$OS" == "debian" ]]; then
   echo "PS1='${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '" >> /root/.bashrc
+
+  # Add additional lines for Debian
+  cat >> /root/.bashrc << 'EOF'
+alias ls='ls --color=auto'
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+EOF
 fi
 
 # 3. Create .vimrc for all users and root
@@ -112,15 +139,17 @@ for user_home in /home/*; do
 done
 
 # 5. Check and potentially change the SSH port
-current_port_line=$(grep -Ei "^[^#]*port [0-9]+" /etc/ssh/sshd_config)
+current_port_line=$(grep -Ei "^[ \t]*Port[ \t]+[0-9]+" /etc/ssh/sshd_config)
 current_port=${current_port_line##* }
 
-if [[ -z "$current_port_line" || "$current_port_line" == "#Port 22" ]]; then
-  # Default configuration or commented default port
+if [[ -z "$current_port_line" ]]; then
+  # No active port configuration found
+  echo "No SSH port configuration found. Default port is likely 22."
   change_port="y"
 else
   # Current active port configuration in use
-  read -p "The current SSH port is $current_port. Do you want to change it? (y/n): " change_port
+  echo "The current SSH port is $current_port."
+  read -p "Do you want to change it? (y/n): " change_port
 fi
 
 if [[ "$change_port" =~ ^[Yy]$ ]]; then
@@ -269,7 +298,7 @@ if [[ "$sync_time" =~ ^[Yy]$ ]]; then
     
     # Check and install ntpdate if needed
     if ! command -v ntpdate >/dev/null 2>&1; then
-        echo "Installing ntpdate and ntp..."
+        echo "Installing ntpdate..."
         apt update
         apt install -y ntpdate
     fi
