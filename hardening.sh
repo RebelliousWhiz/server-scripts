@@ -18,7 +18,7 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 # Ensure essential packages are installed
-required_packages=("curl" "wget" "socat" "bash-completion" "wireguard" "vim")
+required_packages=("curl" "rsyslog" "wget" "socat" "bash-completion" "wireguard" "vim")
 
 # For Debian, add dnsmasq to the required packages
 if [[ "$OS" == "debian" ]]; then
