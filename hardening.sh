@@ -17,20 +17,14 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
-# Ensure essential packages are installed
-required_packages=("curl" "rsyslog" "wget" "socat" "bash-completion" "wireguard" "vim")
+# Install the base packages
+apt update && apt install -y curl rsyslog wget socat bash-completion wireguard vim
 
-# For Debian, add dnsmasq to the required packages
+# Check if the system is Debian, and if so, install dnsmasq
 if [[ "$OS" == "debian" ]]; then
-  required_packages+=("dnsmasq")
+  echo "Debian detected, installing dnsmasq..."
+  apt install -y dnsmasq
 fi
-
-for pkg in "${required_packages[@]}"; do
-  if ! dpkg -l | grep -q "^ii.*$pkg"; then
-    echo "$pkg is not installed. Installing $pkg..."
-    apt update && apt install -y "$pkg"
-  fi
-done
 
 # Ensure sudo is installed
 if ! command -v sudo >/dev/null 2>&1; then
