@@ -352,6 +352,25 @@ if [[ "$sync_time" =~ ^[Yy]$ ]]; then
     echo "Time synchronization configured successfully"
 fi
 
+# 11 Step to modify /etc/sysctl.conf
+read -p "Do you want to modify /etc/sysctl.conf with custom settings? (y/n): " modify_sysctl
+if [[ "$modify_sysctl" =~ ^[Yy]$ ]]; then
+  # Download content and append to /etc/sysctl.conf
+  file_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl.conf"
+  echo "Downloading custom sysctl configuration..."
+  if curl -fsSL "$file_url" -o sysctl.custom.conf; then
+    cat sysctl.custom.conf >> /etc/sysctl.conf
+    rm -f sysctl.custom.conf
+    echo "Custom configuration appended to /etc/sysctl.conf"
+
+    # Apply settings
+    echo "Applying the changes with sysctl -p..."
+    sysctl -p
+  else
+    echo "Failed to download the custom sysctl configuration."
+  fi
+fi
+
 # Self-delete the script
 rm -- "$0"
 
