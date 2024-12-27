@@ -17,13 +17,16 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
+# Detect the operating system
+detect_os
+
 # Install the base packages
 apt update && apt install -y curl rsyslog wget socat bash-completion wireguard vim
 
 # Check if the system is Debian, and if so, install dnsmasq
 if [[ "$OS" == "debian" ]]; then
   echo "Debian detected, installing dnsmasq..."
-  apt install -y dnsmasq
+  apt update && apt install -y dnsmasq
 fi
 
 # Ensure sudo is installed
@@ -36,30 +39,25 @@ if ! command -v sudo >/dev/null 2>&1; then
   echo "Available users with home directories:"
   ls /home
 
-  read -p "Please enter the username to add to the sudo group: " username
-  if [[ -d "/home/$username" ]]; then
+  read -r -p "Please enter the username to add to the sudo group: " username
+  if id "$username" &>/dev/null; then
     usermod -aG sudo "$username"
     echo "User '$username' has been added to the sudo group."
   else
-    echo "User '$username' not found or does not have a home directory in /home."
+    echo "User '$username' does not exist."
     exit 1
   fi
 fi
 
 echo "Starting system hardening..."
 
-# Detect the operating system
-detect_os
-
 # 1. Handle 'force_color_prompt' for all users, including root
 for user_home in /root /home/*; do
   if [[ -d "$user_home" ]]; then
-    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-      if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
-        sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
-      fi
-    elif [[ "$OS" == "debian" ]]; then
-      echo "force_color_prompt=yes" >> "/root/.bashrc"
+    if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
+      sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
+    else
+      echo "force_color_prompt=yes" >> "$user_home/.bashrc"
     fi
   fi
 done
@@ -109,44 +107,46 @@ set expandtab
 set tabstop=2
 set hlsearch
 EOL
-    chown $(basename $user_home):$(basename $user_home) "$user_home/.vimrc"
+    chown $(basename "$user_home"):$(basename "$user_home") "$user_home/.vimrc"
   fi
 done
 
 # 4. Modify user files
 for user_home in /home/*; do
   if [[ -d "$user_home" ]]; then
+    username=$(basename "$user_home")
     ssh_dir="$user_home/.ssh"
 
-    # Check if .ssh directory exists, else prompt to create it
     if [[ ! -d "$ssh_dir" ]]; then
-      read -p "The directory $ssh_dir does not exist. Do you want to create it? (y/n): " create_ssh_dir
+      read -r -p "The directory $ssh_dir does not exist. Do you want to create it? (y/n): " create_ssh_dir
       if [[ "$create_ssh_dir" =~ ^[Yy]$ ]]; then
         mkdir -p "$ssh_dir"
-        chown $(basename "$user_home"):$(basename "$user_home") "$ssh_dir"
+        chown $username:$username "$ssh_dir"
         chmod 700 "$ssh_dir"
         echo "$ssh_dir has been created with appropriate permissions."
       fi
     fi
 
-    # Now check and optionally create the authorized_keys file
+    # Check and optionally create the authorized_keys file
     authorized_keys_file="$ssh_dir/authorized_keys"
-    if [[ -d "$ssh_dir" ]] && [[ ! -e "$authorized_keys_file" ]]; then
-      read -p "The file $authorized_keys_file does not exist. Do you want to create it? (y/n): " create_auth_keys
-      if [[ "$create_auth_keys" =~ ^[Yy]$ ]]; then
-        echo "Please enter the content for the authorized_keys file. Type 'END' on a new line to finish:"
-        ssh_key_content=""
-        while IFS= read -r line; do
-          [[ $line == "END" ]] && break
-          ssh_key_content+="$line"$'\n'
-        done
-        echo -n "$ssh_key_content" > "$authorized_keys_file"
-        chown $(basename "$user_home"):$(basename "$user_home") "$authorized_keys_file"
-        chmod 600 "$authorized_keys_file"
-        echo "authorized_keys file has been created and populated for $(basename "$user_home")."
+    if [[ -d "$ssh_dir" ]]; then
+      if [[ ! -e "$authorized_keys_file" ]]; then
+        read -r -p "The file $authorized_keys_file does not exist. Do you want to create it? (y/n): " create_auth_keys
+        if [[ "$create_auth_keys" =~ ^[Yy]$ ]]; then
+          echo "Please enter the content for the authorized_keys file. Type 'END' on a new line to finish:"
+          ssh_key_content=""
+          while IFS= read -r line; do
+            [[ $line == "END" ]] && break
+            ssh_key_content+="$line"$'\n'
+          done
+          echo -n "$ssh_key_content" > "$authorized_keys_file"
+          chown $username:$username "$authorized_keys_file"
+          chmod 600 "$authorized_keys_file"
+          echo "authorized_keys file has been created and populated for $username."
+        fi
       fi
     fi
-    
+
     # Subsequent processing of existing .ssh directories and files
     if [[ -d "$ssh_dir" ]]; then
       chown root:root "$ssh_dir"
@@ -161,7 +161,9 @@ for user_home in /home/*; do
     if [[ -e "$user_home/.bash_logout" ]]; then
       chown root:root "$user_home/.bash_logout"
       chmod 644 "$user_home/.bash_logout"
-      echo -e "\n# Clear history\nhistory -c\nhistory -w" >> "$user_home/.bash_logout"
+      if ! grep -q "history -c" "$user_home/.bash_logout"; then
+        echo -e "\n# Clear history\nhistory -c\nhistory -w" >> "$user_home/.bash_logout"
+      fi
     fi
   fi
 done
@@ -171,17 +173,15 @@ current_port_line=$(grep -Ei "^[ \t]*Port[ \t]+[0-9]+" /etc/ssh/sshd_config)
 current_port=${current_port_line##* }
 
 if [[ -z "$current_port_line" ]]; then
-  # No active port configuration found
   echo "No SSH port configuration found. Default port is likely 22."
   change_port="y"
 else
-  # Current active port configuration in use
   echo "The current SSH port is $current_port."
-  read -p "Do you want to change it? (y/n): " change_port
+  read -r -p "Do you want to change it? (y/n): " change_port
 fi
 
 if [[ "$change_port" =~ ^[Yy]$ ]]; then
-  read -p "Please enter the desired SSH port: " ssh_port
+  read -r -p "Please enter the desired SSH port: " ssh_port
   if [[ ! "$ssh_port" =~ ^[0-9]+$ ]] || [[ "$ssh_port" -lt 1 ]] || [[ "$ssh_port" -gt 65535 ]]; then
     echo "Invalid port number. Please enter a number between 1 and 65535."
     exit 1
@@ -194,111 +194,72 @@ sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
 
 # 6. Restart SSH based on OS type
-if [[ "$OS" == "debian" ]]; then
-  systemctl restart sshd
-elif [[ "$OS" == "ubuntu" ]]; then
-  systemctl restart ssh
+if systemctl is-active ssh &>/dev/null || systemctl is-active sshd &>/dev/null; then
+  if [[ "$OS" == "ubuntu" ]]; then
+    systemctl restart ssh
+  else
+    systemctl restart sshd
+  fi
 else
-  echo "Unsupported OS for SSH restart. Please check the OS type."
+  echo "SSH service not found. Please check your SSH installation."
 fi
 
 # 7. IPv6 Disable Option
-read -p "Do you want to disable IPv6? (y/n): " disable_ipv6
+read -r -p "Do you want to disable IPv6? (y/n): " disable_ipv6
 if [[ "$disable_ipv6" =~ ^[Yy]$ ]]; then
-    # Backup the original grub file
-    cp /etc/default/grub /etc/default/grub.backup
-    
-    # Modify GRUB_CMDLINE_LINUX_DEFAULT
-    if grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub; then
-        current_default=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
-        if [ -z "$current_default" ]; then
-            # Empty value
-            sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"/' /etc/default/grub
-        else
-            # Has existing value
-            sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
-        fi
-    else
-        echo 'GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"' >> /etc/default/grub
-    fi
-    
-    # Modify GRUB_CMDLINE_LINUX
-    if grep -q "^GRUB_CMDLINE_LINUX=" /etc/default/grub; then
-        current_linux=$(grep "^GRUB_CMDLINE_LINUX=" /etc/default/grub | cut -d'"' -f2)
-        if [ -z "$current_linux" ]; then
-            # Empty value
-            sed -i 's/GRUB_CMDLINE_LINUX=""/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' /etc/default/grub
-        else
-            # Has existing value
-            sed -i '/GRUB_CMDLINE_LINUX=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
-        fi
-    else
-        echo 'GRUB_CMDLINE_LINUX="ipv6.disable=1"' >> /etc/default/grub
-    fi
-    
-    # Update grub
-    if [[ "$OS" == "debian" ]] || [[ "$OS" == "ubuntu" ]]; then
-        update-grub
-    else
-        echo "Unsupported OS for grub update. Please update grub manually."
-    fi
-    
-    echo "IPv6 has been disabled. Please reboot your system for changes to take effect."
+  cp /etc/default/grub /etc/default/grub.backup
+
+  sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+  sed -i '/GRUB_CMDLINE_LINUX=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+  
+  update-grub
+  
+  echo "IPv6 has been disabled. Please reboot your system for changes to take effect."
 fi
 
 # 8. Remove Snap and prevent its installation (Ubuntu only)
 if [[ "$OS" == "ubuntu" ]]; then
-    echo "Removing Snap and preventing its reinstallation..."
-    
-    # Remove all snap packages
-    snap list 2>/dev/null | awk 'NR>1 {print $1}' | while read pkg; do
-        snap remove --purge "$pkg" 2>/dev/null
-    done
-    
-    # Remove snapd completely
-    apt remove --purge snapd -y
-    rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd
-    
-    # Prevent snapd from being installed again
-    cat > /etc/apt/preferences.d/nosnap.pref <<EOL
+  echo "Removing Snap and preventing its reinstallation..."
+  
+  # Remove all snap packages
+  snap list 2>/dev/null | awk 'NR>1 {print $1}' | while read pkg; do
+    snap remove --purge "$pkg" 2>/dev/null
+  done
+  
+  # Remove snapd completely
+  apt remove --purge snapd -y
+  rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd
+  
+  # Prevent snapd from being installed again
+  cat > /etc/apt/preferences.d/nosnap.pref <<EOL
 Package: snapd
 Pin: release a=*
 Pin-Priority: -1
 EOL
-    
-    echo "Snap has been removed and blocked from future installation."
+
+  echo "Snap has been removed and blocked from future installation."
 fi
 
 echo "System hardening completed."
 
 # 9. UFW Configuration
-read -p "Do you want to configure UFW firewall? (y/n): " configure_ufw
+read -r -p "Do you want to configure UFW firewall? (y/n): " configure_ufw
 if [[ "$configure_ufw" =~ ^[Yy]$ ]]; then
-  # Check if UFW is installed for Debian or Ubuntu
-  if [[ "$OS" == "debian" || "$OS" == "ubuntu" ]]; then
-    if ! command -v ufw >/dev/null 2>&1; then
-      echo "UFW is not installed. Installing UFW..."
-      apt update
-      apt install -y ufw
-    fi
-  else
-    echo "Unsupported OS for UFW configuration. Exiting."
-    exit 1
+  if ! command -v ufw >/dev/null 2>&1; then
+    echo "UFW is not installed. Installing UFW..."
+    apt update
+    apt install -y ufw
   fi
   
-  # Reset UFW to default settings
   echo "Resetting UFW to default settings..."
   ufw --force reset
 
-  # Download and execute UFW configuration script
-  echo "Downloading and executing UFW configuration script..."
-  wget https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh
+  wget -q https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh -O ufw.sh
   if [[ -f "ufw.sh" ]]; then
     chmod +x ufw.sh
-    bash ./ufw.sh
+    ./ufw.sh
     rm -f ufw.sh
     
-    # Enable UFW
     echo "Enabling UFW..."
     ufw --force enable
   else
@@ -307,49 +268,43 @@ if [[ "$configure_ufw" =~ ^[Yy]$ ]]; then
 fi
 
 # 10. Time Synchronization
-read -p "Do you want to sync time with time.nist.gov? (y/n): " sync_time
+read -r -p "Do you want to sync time with time.nist.gov? (y/n): " sync_time
 if [[ "$sync_time" =~ ^[Yy]$ ]]; then
-    echo "Configuring time synchronization..."
-    
-    # Stop and disable existing time sync services
-    systemctl stop systemd-timesyncd 2>/dev/null
-    systemctl disable systemd-timesyncd 2>/dev/null
-    systemctl stop ntp 2>/dev/null
-    systemctl disable ntp 2>/dev/null
-    systemctl stop chronyd 2>/dev/null
-    systemctl disable chronyd 2>/dev/null
-    
-    # Remove chrony if installed (optional, but prevents conflicts)
-    if dpkg -l | grep -q "chrony"; then
-        apt remove --purge chrony -y
-    fi
-    
-    # Check and install ntpdate if needed
-    if ! command -v ntpdate >/dev/null 2>&1; then
-        echo "Installing ntpdate..."
-        apt update
-        apt install -y ntpdate
-    fi
-    
-    # Perform initial time sync
-    echo "Performing initial time sync..."
-    ntpdate -4 time.nist.gov
-    
-    # Add cron job for periodic sync
-    if ! grep -q "ntpdate -4 -s time.nist.gov" /etc/crontab; then
-        echo "00 */6  * * *   root  ntpdate -4 -s time.nist.gov" >> /etc/crontab
-        echo "Cron job added for periodic time sync every 6 hours"
-    else
-        echo "Time sync cron job already exists"
-    fi
-    
-    echo "Time synchronization configured successfully"
+  echo "Configuring time synchronization..."
+  
+  systemctl stop systemd-timesyncd 2>/dev/null
+  systemctl disable systemd-timesyncd 2>/dev/null
+  systemctl stop ntp 2>/dev/null
+  systemctl disable ntp 2>/dev/null
+  systemctl stop chronyd 2>/dev/null
+  systemctl disable chronyd 2>/dev/null
+  
+  if dpkg-query -W chrony; then
+    apt remove --purge chrony -y
+  fi
+  
+  if ! command -v ntpdate >/dev/null 2>&1; then
+    echo "Installing ntpdate..."
+    apt update
+    apt install -y ntpdate
+  fi
+  
+  echo "Performing initial time sync..."
+  ntpdate -4 time.nist.gov
+  
+  if ! grep -q "ntpdate -4 -s time.nist.gov" /etc/crontab; then
+    echo "00 */6  * * *   root  ntpdate -4 -s time.nist.gov" >> /etc/crontab
+    echo "Cron job added for periodic time sync every 6 hours"
+  else
+    echo "Time sync cron job already exists"
+  fi
+  
+  echo "Time synchronization configured successfully"
 fi
 
 # 11 Step to modify /etc/sysctl.conf
-read -p "Do you want to modify /etc/sysctl.conf with custom settings? (y/n): " modify_sysctl
+read -r -p "Do you want to modify /etc/sysctl.conf with custom settings? (y/n): " modify_sysctl
 if [[ "$modify_sysctl" =~ ^[Yy]$ ]]; then
-  # Download content and append to /etc/sysctl.conf
   file_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl.conf"
   echo "Downloading custom sysctl configuration..."
   if curl -fsSL "$file_url" -o sysctl.custom.conf; then
@@ -357,7 +312,6 @@ if [[ "$modify_sysctl" =~ ^[Yy]$ ]]; then
     rm -f sysctl.custom.conf
     echo "Custom configuration appended to /etc/sysctl.conf"
 
-    # Apply settings
     echo "Applying the changes with sysctl -p..."
     sysctl -p
   else
