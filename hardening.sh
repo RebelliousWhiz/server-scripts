@@ -40,11 +40,18 @@ if ! command -v sudo >/dev/null 2>&1; then
   ls /home
 
   read -r -p "Please enter the username to add to the sudo group: " username
-  if id "$username" &>/dev/null; then
+
+  # Debugging output to check if the username was correctly read
+  if [[ -z "$username" ]]; then
+    echo "No username entered. Please try again."
+    read -r -p "Please enter the username to add to the sudo group: " username
+  fi
+
+  if [[ -d "/home/$username" ]]; then
     usermod -aG sudo "$username"
     echo "User '$username' has been added to the sudo group."
   else
-    echo "User '$username' does not exist."
+    echo "User '$username' not found or does not have a home directory in /home."
     exit 1
   fi
 fi
