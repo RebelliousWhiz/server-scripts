@@ -487,6 +487,15 @@ configure_dnsmasq() {
     if [[ "$OS" == "debian" ]]; then
         log "INFO" "Configuring dnsmasq for Debian..."
         
+        # Check if dnsmasq is installed
+        if ! command -v dnsmasq >/dev/null 2>&1; then
+            log "INFO" "Installing dnsmasq..."
+            if ! install_package dnsmasq; then
+                log "ERROR" "Failed to install dnsmasq"
+                return 1
+            fi
+        fi
+        
         # Backup existing configuration
         create_backup /etc/dnsmasq.conf
 
@@ -508,9 +517,10 @@ EOF
             log "ERROR" "dnsmasq service failed to start"
             return 1
         fi
-        }
 
         log "INFO" "dnsmasq configuration completed successfully"
+    else
+        log "INFO" "Skipping dnsmasq configuration (not Debian)"
     fi
 }
 
