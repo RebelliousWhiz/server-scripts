@@ -754,36 +754,6 @@ EOF
     log "INFO" "System kernel parameters configured"
 }
 
-configure_automatic_updates() {
-    log "INFO" "Configuring automatic security updates..."
-
-    if [[ "$OS" == "ubuntu" ]]; then
-        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
-Unattended-Upgrade::Allowed-Origins {
-    "\${distro_id}:\${distro_codename}-security";
-    "\${distro_id}ESM:\${distro_codename}";
-};
-Unattended-Upgrade::Package-Blacklist {
-};
-Unattended-Upgrade::DevRelease "auto";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
-EOF
-
-        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Download-Upgradeable-Packages "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
-    fi
-
-    systemctl enable unattended-upgrades
-    systemctl restart unattended-upgrades
-    
-    log "INFO" "Automatic security updates configured"
-}
-
 # Execute security configurations
 read -r -p "Enter desired SSH port [22]: " ssh_port
 ssh_port=${ssh_port:-22}
@@ -939,6 +909,211 @@ harden_filesystem() {
     log "INFO" "Filesystem hardening completed"
 }
 
+configure_automatic_updates() {
+    log "INFO" "Configuring automatic security updates..."
+
+    if [[ "$OS" == "ubuntu" ]]; then
+        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}-security";
+    "\${distro_id}ESM:\${distro_codename}";
+};
+Unattended-Upgrade::Package-Blacklist {
+};
+Unattended-Upgrade::DevRelease "auto";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    fi
+
+    systemctl enable unattended-upgrades
+    systemctl restart unattended-upgrades
+    
+    log "INFO" "Automatic security updates configured"
+}
+
+# Config IPv6 and Snap
+configure_ipv6_and_snap() {
+    log "INFO" "Configuring IPv6 and Snap settings..."
+
+    # IPv6 Disable Option
+    read -r -p "Do you want to disable IPv6? (y/n): " disable_ipv6
+    if [[ "$disable_ipv6" =~ ^[Yy]$ ]]; then
+        log "INFO" "Disabling IPv6..."
+        
+        # Backup GRUB configuration
+        create_backup /etc/default/grub
+
+        # Modify GRUB parameters
+        if ! grep -q "ipv6.disable=1" /etc/default/grub; then
+            sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+            sed -i '/GRUB_CMDLINE_LINUX=/ s/"$/ ipv6.disable=1"/' /etc/default/grub
+            
+            # Update GRUB
+            if ! update-grub; then
+                log "ERROR" "Failed to update GRUB configuration"
+                return 1
+            fi
+            
+            log "INFO" "IPv6 has been disabled. System reboot required for changes to take effect."
+        else
+            log "INFO" "IPv6 is already disabled in GRUB configuration"
+        fi
+
+    fi
+
+    # Remove Snap (Ubuntu only)
+    if [[ "$OS" == "ubuntu" ]]; then
+        log "INFO" "Checking Snap packages..."
+        
+        if command -v snap >/dev/null 2>&1; then
+            log "INFO" "Removing Snap and preventing its reinstallation..."
+            
+            # Remove all snap packages
+            local snap_packages
+            snap_packages=$(snap list 2>/dev/null | awk 'NR>1 {print $1}')
+            
+            if [[ -n "$snap_packages" ]]; then
+                while read -r pkg; do
+                    log "INFO" "Removing snap package: $pkg"
+                    if ! snap remove --purge "$pkg" 2>/dev/null; then
+                        log "WARNING" "Failed to remove snap package: $pkg"
+                    fi
+                done <<< "$snap_packages"
+            fi
+            
+            # Remove snapd completely
+            log "INFO" "Removing snapd package..."
+            if apt remove --purge snapd -y; then
+                # Clean up snap directories
+                rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd
+                
+                # Prevent snapd from being installed again
+                cat > /etc/apt/preferences.d/nosnap.pref <<EOL
+Package: snapd
+Pin: release a=*
+Pin-Priority: -1
+EOL
+                
+                log "INFO" "Snap has been removed and blocked from future installation"
+            else
+                log "WARNING" "Failed to remove snapd package"
+            fi
+        else
+            log "INFO" "Snap is not installed on this system"
+        fi
+    fi
+
+    return 0
+}
+
+configure_time_sync() {
+    log "INFO" "Configuring time synchronization..."
+
+    read -r -p "Do you want to sync time with time.nist.gov? (y/n): " sync_time
+    if [[ "$sync_time" =~ ^[Yy]$ ]]; then
+        log "INFO" "Setting up time synchronization with time.nist.gov..."
+
+        # Stop and disable existing time sync services
+        local time_services=("systemd-timesyncd" "ntp" "chronyd")
+        for service in "${time_services[@]}"; do
+            if systemctl is-active --quiet "$service"; then
+                log "INFO" "Stopping $service service..."
+                systemctl stop "$service" 2>/dev/null
+            fi
+            if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+                log "INFO" "Disabling $service service..."
+                systemctl disable "$service" 2>/dev/null
+            fi
+        done
+
+        # Remove chrony if installed
+        if dpkg-query -W chrony 2>/dev/null; then
+            log "INFO" "Removing chrony package..."
+            if ! apt remove --purge chrony -y; then
+                log "WARNING" "Failed to remove chrony package"
+            fi
+        fi
+
+        # Install ntpdate if not present
+        if ! command -v ntpdate >/dev/null 2>&1; then
+            log "INFO" "Installing ntpdate package..."
+            if ! apt-get update; then
+                log "ERROR" "Failed to update package lists"
+                return 1
+            fi
+            if ! install_package ntpdate; then
+                log "ERROR" "Failed to install ntpdate"
+                return 1
+            fi
+        fi
+
+        # Perform initial time sync
+        log "INFO" "Performing initial time synchronization..."
+        if ! ntpdate -4 time.nist.gov; then
+            log "WARNING" "Initial time sync failed"
+            # Try alternative NTP servers
+            local ntp_servers=("pool.ntp.org" "0.pool.ntp.org" "1.pool.ntp.org")
+            local sync_success=false
+            
+            for server in "${ntp_servers[@]}"; do
+                log "INFO" "Trying alternative NTP server: $server"
+                if ntpdate -4 "$server"; then
+                    sync_success=true
+                    break
+                fi
+            done
+
+            if ! $sync_success; then
+                log "ERROR" "Time synchronization failed with all servers"
+                return 1
+            fi
+        fi
+
+        # Configure cron job for periodic sync
+        local cron_file="/etc/crontab"
+        local cron_entry="00 */6  * * *   root  ntpdate -4 -s time.nist.gov"
+        
+        # Backup crontab
+        create_backup "$cron_file"
+
+        if ! grep -q "ntpdate -4 -s time.nist.gov" "$cron_file"; then
+            log "INFO" "Adding time sync cron job..."
+            echo "$cron_entry" >> "$cron_file"
+            
+            # Verify cron entry
+            if ! grep -q "$cron_entry" "$cron_file"; then
+                log "ERROR" "Failed to add cron job"
+                return 1
+            fi
+            
+            log "INFO" "Cron job added for periodic time sync every 6 hours"
+        else
+            log "INFO" "Time sync cron job already exists"
+        fi
+
+        # Add fallback NTP servers to cron job
+        local fallback_entry="30 */6  * * *   root  [ \$(date +%s) -lt \$(date -d '1 day ago' +%s) ] && (ntpdate -4 -s pool.ntp.org || ntpdate -4 -s 0.pool.ntp.org)"
+        if ! grep -q "pool.ntp.org" "$cron_file"; then
+            echo "$fallback_entry" >> "$cron_file"
+            log "INFO" "Added fallback NTP servers to cron job"
+        fi
+
+        log "INFO" "Time synchronization configured successfully"
+    else
+        log "INFO" "Skipping time synchronization configuration"
+    fi
+
+    return 0
+}
+
 final_system_checks() {
     log "INFO" "Performing final system checks..."
 
@@ -1023,6 +1198,8 @@ cleanup_and_finish() {
 configure_audit_system
 configure_process_accounting
 harden_filesystem
+configure_ipv6_and_snap
+configure_time_sync
 final_system_checks
 cleanup_and_finish
 
