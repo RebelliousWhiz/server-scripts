@@ -1021,16 +1021,27 @@ configure_time_sync() {
     if [[ "$sync_time" =~ ^[Yy]$ ]]; then
         log "INFO" "Setting up time synchronization with time.nist.gov..."
 
+        # Set timezone to Asia/Taipei
+        log "INFO" "Setting timezone to Asia/Taipei..."
+        if timedatectl set-timezone Asia/Taipei; then
+            log "INFO" "Timezone set to Asia/Taipei successfully"
+        else
+            log "WARNING" "Failed to set timezone to Asia/Taipei"
+            return 1
+        fi
+
         # Stop and disable existing time sync services
         local time_services=("systemd-timesyncd" "ntp" "chronyd")
         for service in "${time_services[@]}"; do
             if systemctl is-active --quiet "$service"; then
                 log "INFO" "Stopping $service service..."
-                systemctl stop "$service" 2>/dev/null
+                systemctl stop "$service" 2>/dev/null || \
+                    log "WARNING" "Failed to stop $service"
             fi
             if systemctl is-enabled --quiet "$service" 2>/dev/null; then
                 log "INFO" "Disabling $service service..."
-                systemctl disable "$service" 2>/dev/null
+                systemctl disable "$service" 2>/dev/null || \
+                    log "WARNING" "Failed to disable $service"
             fi
         done
 
@@ -1058,15 +1069,16 @@ configure_time_sync() {
         # Perform initial time sync
         log "INFO" "Performing initial time synchronization..."
         if ! ntpdate -4 time.nist.gov; then
-            log "WARNING" "Initial time sync failed"
+            log "WARNING" "Initial time sync with time.nist.gov failed, trying alternatives..."
             # Try alternative NTP servers
-            local ntp_servers=("pool.ntp.org" "0.pool.ntp.org" "1.pool.ntp.org")
+            local ntp_servers=("tw.pool.ntp.org" "pool.ntp.org" "0.pool.ntp.org")
             local sync_success=false
             
             for server in "${ntp_servers[@]}"; do
                 log "INFO" "Trying alternative NTP server: $server"
                 if ntpdate -4 "$server"; then
                     sync_success=true
+                    log "INFO" "Time sync successful with $server"
                     break
                 fi
             done
@@ -1075,38 +1087,69 @@ configure_time_sync() {
                 log "ERROR" "Time synchronization failed with all servers"
                 return 1
             fi
+        else
+            log "INFO" "Initial time sync successful with time.nist.gov"
         fi
 
         # Configure cron job for periodic sync
-        local cron_file="/etc/crontab"
-        local cron_entry="00 */6  * * *   root  ntpdate -4 -s time.nist.gov"
+        log "INFO" "Configuring cron job for root user..."
         
-        # Backup crontab
-        create_backup "$cron_file"
+        # Backup existing root crontab
+        local crontab_backup="/root/crontab.backup.$(date +%Y%m%d_%H%M%S)"
+        if crontab -l > "$crontab_backup" 2>/dev/null; then
+            log "INFO" "Created backup of existing crontab: $crontab_backup"
+        else
+            log "INFO" "No existing crontab found, creating new one"
+            touch "$crontab_backup"
+        fi
 
-        if ! grep -q "ntpdate -4 -s time.nist.gov" "$cron_file"; then
-            log "INFO" "Adding time sync cron job..."
-            echo "$cron_entry" >> "$cron_file"
+        # Create temporary file for new cron entries
+        local temp_crontab
+        temp_crontab=$(mktemp) || {
+            log "ERROR" "Failed to create temporary file for crontab"
+            return 1
+        }
+
+        # Get existing crontab content
+        crontab -l > "$temp_crontab" 2>/dev/null || true
+
+        # Check if time sync entry already exists
+        if ! grep -q "ntpdate -4 -s" "$temp_crontab"; then
+            # Add comments for clarity
+            echo "# Time synchronization with NTP servers" >> "$temp_crontab"
+            echo "00 */6 * * * ntpdate -4 -s tw.pool.ntp.org || ntpdate -4 -s time.nist.gov" >> "$temp_crontab"
+            echo "" >> "$temp_crontab"
+            echo "# Fallback NTP servers (will only sync if time is severely off)" >> "$temp_crontab"
+            echo "30 */6 * * * [ \$(date +\%s) -lt \$(date -d '1 day ago' +\%s) ] && (ntpdate -4 -s pool.ntp.org || ntpdate -4 -s 0.pool.ntp.org)" >> "$temp_crontab"
             
-            # Verify cron entry
-            if ! grep -q "$cron_entry" "$cron_file"; then
-                log "ERROR" "Failed to add cron job"
+            # Install new crontab
+            if crontab "$temp_crontab"; then
+                log "INFO" "Time synchronization cron jobs added successfully"
+            else
+                log "ERROR" "Failed to install new crontab"
+                rm -f "$temp_crontab"
                 return 1
             fi
-            
-            log "INFO" "Cron job added for periodic time sync every 6 hours"
         else
-            log "INFO" "Time sync cron job already exists"
+            log "INFO" "Time sync cron job already exists, skipping crontab modification"
+        fi
+        
+        # Clean up
+        rm -f "$temp_crontab"
+
+        # Verify crontab installation
+        if crontab -l | grep -q "ntpdate -4 -s"; then
+            log "INFO" "Verified crontab installation"
+        else
+            log "WARNING" "Crontab verification failed"
         fi
 
-        # Add fallback NTP servers to cron job
-        local fallback_entry="30 */6  * * *   root  [ \$(date +%s) -lt \$(date -d '1 day ago' +%s) ] && (ntpdate -4 -s pool.ntp.org || ntpdate -4 -s 0.pool.ntp.org)"
-        if ! grep -q "pool.ntp.org" "$cron_file"; then
-            echo "$fallback_entry" >> "$cron_file"
-            log "INFO" "Added fallback NTP servers to cron job"
-        fi
+        # Display current time settings
+        log "INFO" "Current time settings:"
+        log "INFO" "Timezone: $(timedatectl | grep "Time zone")"
+        log "INFO" "Local time: $(date)"
 
-        log "INFO" "Time synchronization configured successfully"
+        log "INFO" "Time synchronization configuration completed successfully"
     else
         log "INFO" "Skipping time synchronization configuration"
     fi
