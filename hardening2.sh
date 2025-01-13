@@ -9,15 +9,6 @@ LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
 
-check_interactive() {
-    if [[ ! -t 0 ]]; then
-        log "ERROR" "This script must be run interactively. Please run: bash -i /tmp/hardening.sh"
-        exit 1
-    fi
-}
-
-check_interactive
-
 install_prerequisites() {
     log "INFO" "Installing prerequisites..."
     
@@ -212,6 +203,13 @@ detect_os() {
     esac
 }
 
+check_interactive() {
+    if [[ ! -t 0 ]]; then
+        log "ERROR" "This script must be run interactively. Please run: bash -i /tmp/hardening.sh"
+        exit 1
+    fi
+}
+
 verify_changes() {
     local file=$1
     local expected_content=$2
@@ -258,6 +256,7 @@ install_prerequisites || exit 1
 check_requirements
 check_system
 detect_os
+check_interactive
 
 # Package Management Functions
 install_package() {
