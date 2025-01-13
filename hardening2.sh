@@ -1,13 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-check_interactive() {
-    if [[ ! -t 0 ]]; then
-        log "ERROR" "This script must be run interactively. Please run: bash -i /tmp/hardening.sh"
-        exit 1
-    fi
-}
-
 # Script Variables
 SCRIPT_PATH=$(mktemp)
 trap 'rm -f "$SCRIPT_PATH"' EXIT
@@ -15,6 +8,13 @@ SCRIPT_VERSION="1.1"
 LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
+
+check_interactive() {
+    if [[ ! -t 0 ]]; then
+        log "ERROR" "This script must be run interactively. Please run: bash -i /tmp/hardening.sh"
+        exit 1
+    fi
+}
 
 check_interactive
 
