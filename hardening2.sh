@@ -646,9 +646,16 @@ EOF
 configure_firewall() {
     log "INFO" "Configuring firewall..."
 
+    # Ask for confirmation before configuring UFW
+    read -r -p "Do you want to configure UFW firewall rules? (y/n): " configure_ufw
+    if [[ ! "$configure_ufw" =~ ^[Yy]$ ]]; then
+        log "INFO" "Skipping UFW configuration"
+        return 0
+    }
+
     if ! command -v ufw >/dev/null 2>&1; then
         install_package ufw || return 1
-    fi
+    }
 
     # Backup existing rules
     create_backup /etc/ufw/user.rules
@@ -665,13 +672,25 @@ configure_firewall() {
     if ! wget -q "https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh" -O "$ufw_script"; then
         log "ERROR" "Failed to download UFW rules"
         return 1
-    fi
+    }
 
     # Verify download
     if [[ ! -s "$ufw_script" ]]; then
         log "ERROR" "Downloaded UFW rules file is empty"
         return 1
-    fi
+    }
+
+    # Show the rules before applying
+    log "INFO" "UFW rules to be applied:"
+    cat "$ufw_script"
+
+    # Ask for confirmation before applying rules
+    read -r -p "Do you want to apply these UFW rules? (y/n): " apply_rules
+    if [[ ! "$apply_rules" =~ ^[Yy]$ ]]; then
+        log "INFO" "Skipping UFW rules application"
+        rm -f "$ufw_script"
+        return 0
+    }
 
     # Make script executable
     chmod +x "$ufw_script"
@@ -681,7 +700,7 @@ configure_firewall() {
     if ! bash "$ufw_script"; then
         log "ERROR" "Failed to apply UFW rules"
         return 1
-    fi
+    }
 
     # Enable logging
     ufw logging on
