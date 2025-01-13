@@ -20,7 +20,7 @@ install_prerequisites() {
     if ! apt-get install -y wget curl systemd; then
         log "ERROR" "Failed to install prerequisites"
         return 1
-    }
+    fi
 
     # Verify systemd is running
     if ! pidof systemd >/dev/null 2>&1; then
