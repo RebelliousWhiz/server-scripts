@@ -26,7 +26,7 @@ handle_error() {
     log "ERROR" "Command: $(sed -n ${line_no}p "$SCRIPT_PATH")"
     log "ERROR" "Starting cleanup and rollback procedures..."
     cleanup
-    exit $exit_code
+    exit "$exit_code"
 }
 
 cleanup() {
@@ -52,7 +52,7 @@ create_backup() {
     if [[ ! -f "$file" ]]; then
         log "WARNING" "Cannot backup $file - file does not exist"
         return 0
-    }
+    fi
 
     mkdir -p "$BACKUP_DIR"
     local backup_file="$BACKUP_DIR/$(basename "$file")"
@@ -60,12 +60,12 @@ create_backup() {
     if ! cp -p "$file" "$backup_file"; then
         log "ERROR" "Failed to create backup of $file"
         return 1
-    }
+    fi
 
     if ! cmp -s "$file" "$backup_file"; then
         log "ERROR" "Backup verification failed for $file"
         return 1
-    }
+    fi
 
     log "INFO" "Successfully backed up $file to $backup_file"
     return 0
@@ -373,7 +373,6 @@ set showmatch
 set visualbell
 set nowrap
 set encoding=utf-8
-colorscheme desert
 EOF
 
     # Configure SSH directory
