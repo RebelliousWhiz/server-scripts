@@ -267,14 +267,44 @@ configure_user_environment() {
     # Skip if not a valid home directory
     [[ ! -d "$user_home" ]] && return 0
 
-    # Configure bash settings
-    if [[ -f "$user_home/.bashrc" ]]; then
+    # Handle force_color_prompt for all users
+    if [[ -f "$user_home/.bashrc" ]]; {
         create_backup "$user_home/.bashrc"
         
-        # Enable color prompt
-        sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$user_home/.bashrc"
-        
-        # Add custom configurations
+        if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
+            sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
+        else
+            echo "force_color_prompt=yes" >> "$user_home/.bashrc"
+        fi
+
+        # Modify PS1 prompt based on OS
+        if [[ "$username" == "root" ]]; then
+            if [[ "$OS" == "ubuntu" ]]; then
+                sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
+                if [ "$color_prompt" = yes ]; then\
+                    PS1='\'${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '\''\
+                else\
+                    PS1='\'${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ '\''\
+                fi\
+                unset color_prompt force_color_prompt' "$user_home/.bashrc"
+            elif [[ "$OS" == "debian" ]]; then
+                echo "PS1='${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '" >> "$user_home/.bashrc"
+
+                # Add additional configurations for Debian
+                cat >> "$user_home/.bashrc" << 'EOF'
+alias ls='ls --color=auto'
+if ! shopt -oq posix; then
+    if [ -f /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
+    elif [ -f /etc/bash_completion ]; then
+        . /etc/bash_completion
+    fi
+fi
+EOF
+            fi
+        fi
+
+        # Rest of the existing .bashrc configurations...
         cat >> "$user_home/.bashrc" <<'EOF'
 
 # Security aliases
@@ -443,6 +473,37 @@ install_base_packages() {
     return 0
 }
 
+# Config dnsmasq
+configure_dnsmasq() {
+    if [[ "$OS" == "debian" ]]; then
+        log "INFO" "Configuring dnsmasq for Debian..."
+        
+        # Backup existing configuration
+        create_backup /etc/dnsmasq.conf
+
+        # Create new configuration
+        cat > /etc/dnsmasq.conf <<EOF
+no-resolv
+server=8.8.8.8
+server=8.8.4.4
+EOF
+
+        # Set proper permissions
+        chmod 644 /etc/dnsmasq.conf
+
+        # Restart dnsmasq service
+        systemctl restart dnsmasq
+
+        # Verify service status
+        if ! systemctl is-active --quiet dnsmasq; then
+            log "ERROR" "dnsmasq service failed to start"
+            return 1
+        }
+
+        log "INFO" "dnsmasq configuration completed successfully"
+    fi
+}
+
 # Execute system updates and package installation
 if ! update_system; then
     log "ERROR" "System update failed"
@@ -453,6 +514,8 @@ if ! install_base_packages; then
     log "ERROR" "Base package installation failed"
     exit 1
 fi
+
+configure_dnsmasq
 
 # Configure sudo access
 setup_sudo_user
