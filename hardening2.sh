@@ -441,6 +441,13 @@ EOF
 setup_sudo_user() {
     log "INFO" "Configuring sudo access..."
     
+    # Check if running in non-interactive mode
+    if [[ ! -t 0 ]]; then
+        log "ERROR" "This script must be run interactively for sudo configuration"
+        log "INFO" "Please run: bash -i /tmp/hardening.sh"
+        return 1
+    fi
+    
     if ! command -v sudo >/dev/null 2>&1; then
         log "INFO" "Installing sudo package..."
         install_package sudo || return 1
@@ -461,6 +468,7 @@ setup_sudo_user() {
     fi
 
     echo "Available users:"
+    PS3="Select user to grant sudo access (enter number): "
     select username in "${users[@]}"; do
         if [[ -n "$username" ]]; then
             log "INFO" "Adding user $username to sudo group"
@@ -473,10 +481,11 @@ setup_sudo_user() {
             log "INFO" "Successfully configured sudo access for $username"
             break
         else
-            log "ERROR" "Invalid selection"
-            return 1
+            echo "Invalid selection. Please try again."
+            continue
         fi
     done
+    return 0
 }
 
 # Main package installation
