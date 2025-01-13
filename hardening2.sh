@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Script Variables
-SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_PATH=$(mktemp)
+trap 'rm -f "$SCRIPT_PATH"' EXIT
 SCRIPT_VERSION="1.1"
 LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
@@ -117,13 +118,13 @@ check_requirements() {
     if [[ "$EUID" -ne 0 ]]; then
         log "ERROR" "This script must be run as root"
         exit 1
-    }
+    fi
 
     # Check if systemd is available
     if ! pidof systemd >/dev/null 2>&1; then
         log "ERROR" "systemd is required but not running"
         exit 1
-    }
+    fi
 }
 
 check_system() {
