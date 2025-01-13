@@ -862,6 +862,36 @@ EOF
     return 0
 }
 
+configure_automatic_updates() {
+    log "INFO" "Configuring automatic security updates..."
+
+    if [[ "$OS" == "ubuntu" ]]; then
+        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}-security";
+    "\${distro_id}ESM:\${distro_codename}";
+};
+Unattended-Upgrade::Package-Blacklist {
+};
+Unattended-Upgrade::DevRelease "auto";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    fi
+
+    systemctl enable unattended-upgrades
+    systemctl restart unattended-upgrades
+    
+    log "INFO" "Automatic security updates configured"
+}
+
 # Execute security configurations
 read -r -p "Enter desired SSH port [22]: " ssh_port
 ssh_port=${ssh_port:-22}
@@ -1015,36 +1045,6 @@ harden_filesystem() {
     done
     
     log "INFO" "Filesystem hardening completed"
-}
-
-configure_automatic_updates() {
-    log "INFO" "Configuring automatic security updates..."
-
-    if [[ "$OS" == "ubuntu" ]]; then
-        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
-Unattended-Upgrade::Allowed-Origins {
-    "\${distro_id}:\${distro_codename}-security";
-    "\${distro_id}ESM:\${distro_codename}";
-};
-Unattended-Upgrade::Package-Blacklist {
-};
-Unattended-Upgrade::DevRelease "auto";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
-EOF
-
-        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Download-Upgradeable-Packages "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
-    fi
-
-    systemctl enable unattended-upgrades
-    systemctl restart unattended-upgrades
-    
-    log "INFO" "Automatic security updates configured"
 }
 
 # Config IPv6 and Snap
