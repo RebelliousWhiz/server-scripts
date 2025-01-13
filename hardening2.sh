@@ -8,6 +8,37 @@ LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
 
+install_prerequisites() {
+    log "INFO" "Checking and installing prerequisites..."
+    
+    local prerequisites=(wget curl systemd)
+    local missing_pkgs=()
+
+    for pkg in "${prerequisites[@]}"; do
+        if ! command -v "$pkg" >/dev/null 2>&1; then
+            missing_pkgs+=("$pkg")
+        fi
+    done
+
+    if (( ${#missing_pkgs[@]} > 0 )); then
+        log "INFO" "Installing missing prerequisites: ${missing_pkgs[*]}"
+        apt-get update || {
+            log "ERROR" "Failed to update package lists"
+            return 1
+        }
+        
+        for pkg in "${missing_pkgs[@]}"; do
+            if ! apt-get install -y "$pkg"; then
+                log "ERROR" "Failed to install $pkg"
+                return 1
+            fi
+        done
+    fi
+
+    log "INFO" "All prerequisites are installed"
+    return 0
+}
+
 # System Requirements
 MIN_RAM_MB=512
 MIN_DISK_MB=1024
@@ -208,6 +239,8 @@ if ! mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null; then
     rm -f "$LOCK_FILE"
     exit 1
 fi
+
+install_prerequisites || exit 1
 
 # Initial checks
 check_requirements
@@ -716,6 +749,13 @@ configure_sysctl() {
 
     create_backup /etc/sysctl.conf
     
+    # Check if running in LXC container
+    local is_lxc=false
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        is_lxc=true
+        log "WARNING" "Running in LXC container - some sysctl parameters may not apply"
+    fi
+
     cat > /etc/sysctl.d/99-security.conf <<EOF
 # Network Security
 net.ipv4.tcp_syncookies = 1
@@ -732,7 +772,11 @@ net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.default.send_redirects = 0
 net.ipv4.conf.all.log_martians = 1
 net.ipv4.tcp_timestamps = 0
+EOF
 
+    if ! $is_lxc; then
+        # Add non-LXC specific parameters
+        cat >> /etc/sysctl.d/99-security.conf <<EOF
 # Proxy Network Improvement
 fs.file-max = 1024000
 net.core.rmem_max = 134217728
@@ -766,11 +810,15 @@ kernel.core_uses_pid = 1
 kernel.dmesg_restrict = 1
 kernel.yama.ptrace_scope = 1
 EOF
+    fi
 
-    # Apply sysctl settings
-    sysctl -p /etc/sysctl.d/99-security.conf
+    # Apply sysctl settings with error handling
+    if ! sysctl -p /etc/sysctl.d/99-security.conf 2>/dev/null; then
+        log "WARNING" "Some sysctl parameters could not be applied. This is normal in containers."
+    fi
     
-    log "INFO" "System kernel parameters configured"
+    log "INFO" "System kernel parameters configured (with container awareness)"
+    return 0
 }
 
 # Execute security configurations
