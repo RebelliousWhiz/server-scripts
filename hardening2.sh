@@ -41,9 +41,9 @@ install_prerequisites() {
 }
 
 # System Requirements
-MIN_RAM_MB=512
-MIN_DISK_MB=1024
-MIN_SWAP_MB=1024
+MIN_RAM_MB=400
+MIN_DISK_MB=400
+MIN_SWAP_MB=400
 REQUIRED_COMMANDS=(systemctl wget curl ping)
 
 # Trap handlers
