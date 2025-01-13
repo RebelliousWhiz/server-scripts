@@ -410,7 +410,7 @@ setup_sudo_user() {
     if ! command -v sudo >/dev/null 2>&1; then
         log "INFO" "Installing sudo package..."
         install_package sudo || return 1
-    }
+    fi
 
     # Show available users and configure sudo access
     local users=()
@@ -424,7 +424,7 @@ setup_sudo_user() {
     if (( ${#users[@]} == 0 )); then
         log "WARNING" "No regular users found to grant sudo access"
         return 0
-    }
+    fi
 
     echo "Available users:"
     select username in "${users[@]}"; do
@@ -615,7 +615,7 @@ configure_firewall() {
 
     if ! command -v ufw >/dev/null 2>&1; then
         install_package ufw || return 1
-    }
+    fi
 
     # Backup existing rules
     create_backup /etc/ufw/user.rules
@@ -632,13 +632,13 @@ configure_firewall() {
     if ! wget -q "https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh" -O "$ufw_script"; then
         log "ERROR" "Failed to download UFW rules"
         return 1
-    }
+    fi
 
     # Verify download
     if [[ ! -s "$ufw_script" ]]; then
         log "ERROR" "Downloaded UFW rules file is empty"
         return 1
-    }
+    fi
 
     # Make script executable
     chmod +x "$ufw_script"
@@ -648,7 +648,7 @@ configure_firewall() {
     if ! bash "$ufw_script"; then
         log "ERROR" "Failed to apply UFW rules"
         return 1
-    }
+    fi
 
     # Enable logging
     ufw logging on
