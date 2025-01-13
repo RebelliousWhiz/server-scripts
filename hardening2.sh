@@ -10,30 +10,30 @@ LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
 
 install_prerequisites() {
-    log "INFO" "Checking and installing prerequisites..."
+    log "INFO" "Installing prerequisites..."
     
-    local prerequisites=(wget curl systemd)
-    local missing_pkgs=()
+    apt-get update || {
+        log "ERROR" "Failed to update package lists"
+        return 1
+    }
+    
+    if ! apt-get install -y wget curl systemd; then
+        log "ERROR" "Failed to install prerequisites"
+        return 1
+    }
 
-    for pkg in "${prerequisites[@]}"; do
-        if ! command -v "$pkg" >/dev/null 2>&1; then
-            missing_pkgs+=("$pkg")
-        fi
-    done
-
-    if (( ${#missing_pkgs[@]} > 0 )); then
-        log "INFO" "Installing missing prerequisites: ${missing_pkgs[*]}"
-        apt-get update || {
-            log "ERROR" "Failed to update package lists"
+    # Verify systemd is running
+    if ! pidof systemd >/dev/null 2>&1; then
+        log "WARNING" "systemd installed but not running. A system reboot is required."
+        echo "System needs to be rebooted to complete systemd installation."
+        read -r -p "Would you like to reboot now? (y/n): " response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            log "INFO" "Rebooting system..."
+            reboot
+        else
+            log "ERROR" "Cannot continue without systemd running"
             return 1
-        }
-        
-        for pkg in "${missing_pkgs[@]}"; do
-            if ! apt-get install -y "$pkg"; then
-                log "ERROR" "Failed to install $pkg"
-                return 1
-            fi
-        done
+        fi
     fi
 
     log "INFO" "All prerequisites are installed"
