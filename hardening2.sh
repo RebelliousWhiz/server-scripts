@@ -196,9 +196,18 @@ if [[ -f "$LOCK_FILE" ]]; then
     exit 1
 fi
 
-# Create lock file and log directory
-touch "$LOCK_FILE"
-mkdir -p "$(dirname "$LOG_FILE")"
+# Create lock file with error handling
+if ! touch "$LOCK_FILE" 2>/dev/null; then
+    log "ERROR" "Cannot create lock file at $LOCK_FILE. Check permissions."
+    exit 1
+fi
+
+# Create log directory with error handling
+if ! mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null; then
+    log "ERROR" "Cannot create log directory at $(dirname "$LOG_FILE"). Check permissions."
+    rm -f "$LOCK_FILE"
+    exit 1
+fi
 
 # Initial checks
 check_requirements
@@ -243,13 +252,13 @@ update_system() {
     if ! apt-get upgrade -y; then
         log "ERROR" "Failed to upgrade packages"
         return 1
-    }
-
+    fi
+    
     log "INFO" "Performing distribution upgrade..."
     if ! apt-get dist-upgrade -y; then
         log "ERROR" "Failed to perform distribution upgrade"
         return 1
-    }
+    fi
 
     log "INFO" "Removing unused packages..."
     apt-get autoremove -y
@@ -268,7 +277,7 @@ configure_user_environment() {
     [[ ! -d "$user_home" ]] && return 0
 
     # Handle force_color_prompt for all users
-    if [[ -f "$user_home/.bashrc" ]]; {
+    if [[ -f "$user_home/.bashrc" ]]; then
         create_backup "$user_home/.bashrc"
         
         if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
@@ -498,6 +507,7 @@ EOF
         if ! systemctl is-active --quiet dnsmasq; then
             log "ERROR" "dnsmasq service failed to start"
             return 1
+        fi
         }
 
         log "INFO" "dnsmasq configuration completed successfully"
@@ -579,7 +589,7 @@ EOF
     if ! sshd -t; then
         log "ERROR" "SSH configuration validation failed"
         return 1
-    }
+    fi
 
     # Restart SSH service
     if [[ "$OS" == "ubuntu" ]]; then
@@ -1096,7 +1106,7 @@ configure_time_sync() {
         
         # Backup existing root crontab
         local crontab_backup="/root/crontab.backup.$(date +%Y%m%d_%H%M%S)"
-        if crontab -l > "$crontab_backup" 2>/dev/null; then
+        if crontab -l 2>/dev/null | grep -q "ntpdate -4 -s"; then
             log "INFO" "Created backup of existing crontab: $crontab_backup"
         else
             log "INFO" "No existing crontab found, creating new one"
