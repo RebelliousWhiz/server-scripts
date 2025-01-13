@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+check_interactive() {
+    if [[ ! -t 0 ]]; then
+        log "ERROR" "This script must be run interactively. Please run: bash -i /tmp/hardening.sh"
+        exit 1
+    fi
+}
+
 # Script Variables
 SCRIPT_PATH=$(mktemp)
 trap 'rm -f "$SCRIPT_PATH"' EXIT
@@ -8,6 +15,8 @@ SCRIPT_VERSION="1.1"
 LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
+
+check_interactive
 
 install_prerequisites() {
     log "INFO" "Installing prerequisites..."
@@ -129,7 +138,9 @@ check_requirements() {
 
 check_system() {
     log "INFO" "Performing system checks..."
-    
+
+    check_interactive
+
     # Memory check
     local available_mem=$(free -m | awk '/^Mem:/{print $7}')
     if (( available_mem < MIN_RAM_MB )); then
@@ -656,6 +667,8 @@ EOF
 configure_firewall() {
     log "INFO" "Configuring firewall..."
 
+    check_interactive
+
     # Ask for confirmation before configuring UFW
     read -r -p "Do you want to configure UFW firewall rules? (y/n): " configure_ufw
     if [[ ! "$configure_ufw" =~ ^[Yy]$ ]]; then
@@ -1039,6 +1052,8 @@ EOF
 configure_ipv6_and_snap() {
     log "INFO" "Configuring IPv6 and Snap settings..."
 
+    check_interactive
+
     # IPv6 Disable Option
     read -r -p "Do you want to disable IPv6? (y/n): " disable_ipv6
     if [[ "$disable_ipv6" =~ ^[Yy]$ ]]; then
@@ -1112,6 +1127,8 @@ EOL
 
 configure_time_sync() {
     log "INFO" "Configuring time synchronization..."
+
+    check_interactive
 
     read -r -p "Do you want to sync time with time.nist.gov? (y/n): " sync_time
     if [[ "$sync_time" =~ ^[Yy]$ ]]; then
