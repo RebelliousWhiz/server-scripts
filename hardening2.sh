@@ -9,6 +9,41 @@ LOCK_FILE="/var/run/system_hardening.lock"
 LOG_FILE="/var/log/system_hardening.log"
 BACKUP_DIR="/root/system_hardening_backups/$(date +%Y%m%d_%H%M%S)"
 
+validate_user() {
+    local username=$1
+    
+    # Check if username is empty
+    if [[ -z "$username" ]]; then
+        return 1
+    fi
+
+    # Check if user exists
+    if ! id "$username" >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Check if home directory exists
+    local user_home
+    user_home=$(getent passwd "$username" | cut -d: -f6)
+    if [[ ! -d "$user_home" ]]; then
+        return 1
+    fi
+
+    return 0
+}
+
+get_user_shell() {
+    local username=$1
+    getent passwd "$username" | cut -d: -f7
+}
+
+is_system_user() {
+    local username=$1
+    local uid
+    uid=$(id -u "$username")
+    [[ "$uid" -lt 1000 ]]
+}
+
 install_prerequisites() {
     log "INFO" "Installing prerequisites..."
     
@@ -846,9 +881,86 @@ configure_dnsmasq
 setup_sudo_user
 
 # Configure user environments
-for user_home in /root /home/*; do
-    configure_user_environment "$user_home"
-done
+configure_users() {
+    log "INFO" "Starting user environment configuration..."
+
+    # Create temporary file for error handling
+    local temp_file
+    temp_file=$(mktemp) || {
+        log "ERROR" "Failed to create temporary file"
+        return 1
+    }
+    
+    # Add cleanup trap
+    trap 'rm -f "$temp_file"' RETURN
+
+    # Configure regular users
+    log "INFO" "Configuring regular user environments..."
+    while IFS= read -r -d '' user_dir; do
+        # Skip if not a directory
+        [[ ! -d "$user_dir" ]] && continue
+        
+        # Get username and validate
+        username=$(basename "$user_dir")
+        if ! id "$username" >/dev/null 2>&1; then
+            log "WARNING" "User $username does not exist in system"
+            continue
+        }
+
+        # Get user shell
+        shell=$(getent passwd "$username" | cut -d: -f7)
+        
+        # Skip system users (UID < 1000)
+        uid=$(id -u "$username")
+        if [[ "$uid" -lt 1000 ]]; then
+            log "INFO" "Skipping system user $username (UID: $uid)"
+            continue
+        fi
+
+        # Only configure for users with valid shells
+        case "$shell" in
+            */bash|*/sh)
+                log "INFO" "Configuring environment for user: $username (Shell: $shell)"
+                if ! configure_user_environment "$user_dir"; then
+                    log "WARNING" "Failed to configure environment for user: $username"
+                    echo "$username" >> "$temp_file"
+                fi
+                ;;
+            *)
+                log "INFO" "Skipping user $username (non-standard shell: $shell)"
+                ;;
+        esac
+    done < <(find /home -mindepth 1 -maxdepth 1 -type d -print0)
+
+    # Configure root separately
+    if [[ -d "/root" ]]; then
+        log "INFO" "Configuring root environment..."
+        if ! configure_user_environment "/root"; then
+            log "WARNING" "Failed to configure root environment"
+            echo "root" >> "$temp_file"
+        fi
+    else
+        log "WARNING" "Root directory not found"
+    fi
+
+    # Check for any failures
+    if [[ -s "$temp_file" ]]; then
+        log "WARNING" "Failed to configure some user environments:"
+        while IFS= read -r failed_user; do
+            log "WARNING" "- $failed_user"
+        done < "$temp_file"
+        return 1
+    fi
+
+    log "INFO" "User environment configuration completed successfully"
+    return 0
+}
+
+# Execute user configuration
+if ! configure_users; then
+    log "ERROR" "User environment configuration had some failures"
+    # Continue script execution despite failures
+fi
 
 # Disable ssh.socket in LXC
 check_ssh_socket() {
