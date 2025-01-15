@@ -46,7 +46,11 @@ install_prerequisites() {
 MIN_RAM_MB=400
 MIN_DISK_MB=400
 MIN_SWAP_MB=400
-REQUIRED_COMMANDS=(systemctl wget curl ping)
+if systemd-detect-virt --container | grep -q "lxc"; then
+    REQUIRED_COMMANDS=(wget curl ping)
+else
+    REQUIRED_COMMANDS=(systemctl wget curl ping)
+fi
 
 # Trap handlers
 trap 'handle_error $LINENO' ERR
@@ -126,10 +130,14 @@ check_requirements() {
         exit 1
     fi
 
-    # Check if systemd is available
-    if ! pidof systemd >/dev/null 2>&1; then
-        log "ERROR" "systemd is required but not running"
-        exit 1
+    # Modify systemd check to handle LXC
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "INFO" "Running in LXC container - skipping systemd check"
+    else
+        if ! pidof systemd >/dev/null 2>&1; then
+            log "ERROR" "systemd is required but not running"
+            exit 1
+        fi
     fi
 }
 
