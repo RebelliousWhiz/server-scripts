@@ -259,6 +259,34 @@ check_interactive() {
     fi
 }
 
+fix_locale() {
+    log "INFO" "Fixing locale settings..."
+    
+    # Check if locales are properly generated
+    if ! locale -a | grep -q "en_US.utf8"; then
+        log "INFO" "Generating en_US.UTF-8 locale..."
+        echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+        locale-gen
+    fi
+
+    # Set correct environment variables
+    cat > /etc/default/locale <<EOF
+LANG=en_US.UTF-8
+LC_ALL=en_US.UTF-8
+LANGUAGE=en_US:en
+EOF
+
+    # Export for current session
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    export LANGUAGE=en_US:en
+
+    # Source the new settings
+    . /etc/default/locale
+
+    log "INFO" "Locale settings updated"
+}
+
 verify_changes() {
     local file=$1
     local expected_content=$2
@@ -306,6 +334,7 @@ check_requirements
 check_system
 detect_os
 check_interactive
+fix_locale
 
 # Package Management Functions
 install_package() {
@@ -1061,7 +1090,6 @@ Compression no
 IgnoreRhosts yes
 HostbasedAuthentication no
 StrictModes yes
-UsePrivilegeSeparation sandbox
 KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
