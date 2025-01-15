@@ -311,11 +311,133 @@ update_system() {
     return 0
 }
 
+# Add SSH keys for users
+configure_ssh_keys() {
+    local user_home=$1
+    local username=$(basename "$user_home")
+    local auth_keys_file="$user_home/.ssh/authorized_keys"
+    
+    # Skip root user
+    [[ "$username" == "root" ]] && return 0
+    
+    # Skip if not a valid home directory
+    [[ ! -d "$user_home" ]] && return 0
+    
+    log "INFO" "Checking SSH keys for user: $username"
+    
+    # Create .ssh directory if it doesn't exist
+    if [[ ! -d "$user_home/.ssh" ]]; then
+        mkdir -p "$user_home/.ssh"
+        chmod 700 "$user_home/.ssh"
+        chown "$username:$username" "$user_home/.ssh"
+    fi
+    
+    # Check for existing authorized_keys
+    if [[ ! -f "$auth_keys_file" ]]; then
+        log "INFO" "No authorized_keys file found for user: $username"
+        
+        read -r -p "Do you want to add an SSH key for user $username? (y/n): " add_key
+        if [[ "$add_key" =~ ^[Yy]$ ]]; then
+            # Create temporary file for key input
+            local temp_key_file
+            temp_key_file=$(mktemp) || {
+                log "ERROR" "Failed to create temporary file for key input"
+                return 1
+            }
+            
+            # Cleanup handler for temporary file
+            trap 'rm -f "$temp_key_file"' RETURN
+            
+            echo "Please paste the SSH public key for user $username (press Ctrl+D when done):"
+            cat > "$temp_key_file"
+            
+            # Validate SSH key format
+            if ! ssh-keygen -l -f "$temp_key_file" >/dev/null 2>&1; then
+                log "ERROR" "Invalid SSH key format provided for user $username"
+                return 1
+            fi
+            
+            # Create authorized_keys with proper permissions
+            cat "$temp_key_file" > "$auth_keys_file"
+            chmod 600 "$auth_keys_file"
+            chown "$username:$username" "$auth_keys_file"
+            
+            log "INFO" "SSH key added successfully for user $username"
+            
+            # Display key fingerprint for verification
+            local key_fingerprint
+            key_fingerprint=$(ssh-keygen -l -f "$auth_keys_file")
+            log "INFO" "Key fingerprint: $key_fingerprint"
+            
+            # Ask for verification
+            read -r -p "Does this key fingerprint look correct? (y/n): " verify_key
+            if [[ ! "$verify_key" =~ ^[Yy]$ ]]; then
+                log "WARNING" "Removing added key based on user verification"
+                rm -f "$auth_keys_file"
+                return 1
+            fi
+        else
+            log "INFO" "Skipping SSH key configuration for user $username"
+        fi
+    else
+        log "INFO" "Existing authorized_keys file found for user $username"
+        
+        # Display existing key fingerprints
+        log "INFO" "Existing key fingerprints:"
+        while read -r key; do
+            [[ -n "$key" && "$key" != \#* ]] && {
+                echo "$key" | ssh-keygen -l -f - 2>/dev/null || \
+                    log "WARNING" "Invalid key found in authorized_keys"
+            }
+        done < "$auth_keys_file"
+        
+        # Option to add additional key
+        read -r -p "Do you want to add an additional SSH key for user $username? (y/n): " add_key
+        if [[ "$add_key" =~ ^[Yy]$ ]]; then
+            echo "Please paste the additional SSH public key (press Ctrl+D when done):"
+            local temp_key_file
+            temp_key_file=$(mktemp) || {
+                log "ERROR" "Failed to create temporary file for key input"
+                return 1
+            }
+            
+            trap 'rm -f "$temp_key_file"' RETURN
+            cat > "$temp_key_file"
+            
+            # Validate new key
+            if ! ssh-keygen -l -f "$temp_key_file" >/dev/null 2>&1; then
+                log "ERROR" "Invalid SSH key format provided"
+                return 1
+            fi
+            
+            # Check for duplicate keys
+            if grep -qf "$temp_key_file" "$auth_keys_file"; then
+                log "WARNING" "This key is already present in authorized_keys"
+                return 1
+            fi
+            
+            # Append new key
+            cat "$temp_key_file" >> "$auth_keys_file"
+            chmod 600 "$auth_keys_file"
+            chown "$username:$username" "$auth_keys_file"
+            
+            log "INFO" "Additional SSH key added successfully"
+        fi
+    fi
+    
+    return 0
+}
+
 configure_user_environment() {
     local user_home=$1
     local username=$(basename "$user_home")
     
     log "INFO" "Configuring environment for user: $username"
+
+    # Add SSH keys for users
+    configure_ssh_keys "$user_home" || {
+        log "WARNING" "Failed to configure SSH keys for user $username"
+    }
 
     # Skip if not a valid home directory
     [[ ! -d "$user_home" ]] && return 0
