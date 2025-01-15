@@ -28,7 +28,7 @@ install_prerequisites() {
             log "WARNING" "systemd installed but not running. A system reboot is required."
             echo "System needs to be rebooted to complete systemd installation."
             read -r -p "Would you like to reboot now? (y/n): " response
-            if [[ "`$response" =~ ^[Yy]$` ]]; then
+            if [[ "$response" =~ ^[Yy]$ ]]; then
                 log "INFO" "Rebooting system..."
                 reboot
             else
@@ -88,7 +88,11 @@ create_backup() {
         return 0
     fi
 
-    mkdir -p "$BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR" || {
+        log "ERROR" "Failed to create backup directory"
+        return 1
+    }
+
     local backup_file="$BACKUP_DIR/$(basename "$file")"
     
     if ! cp -p "$file" "$backup_file"; then
@@ -556,7 +560,7 @@ EOF
 clear
 
 # Clean history
-cat /dev/null > ~/.bash_history
+cat /dev/null > "$HOME/.bash_history"
 history -c
 
 # Secure SSH agent
@@ -1266,7 +1270,7 @@ harden_filesystem() {
     create_backup /etc/fstab
     
     # Add nodev, nosuid, noexec where appropriate
-    while read -r line; do
+    while read -r line || [[ -n "$line" ]]; do
         if [[ $line =~ ^[^#] ]]; then
             mountpoint=$(echo "$line" | awk '{print $2}')
             case "$mountpoint" in
@@ -1478,7 +1482,7 @@ configure_time_sync() {
             echo "00 */6 * * * ntpdate -4 -s tw.pool.ntp.org || ntpdate -4 -s time.nist.gov" >> "$temp_crontab"
             echo "" >> "$temp_crontab"
             echo "# Fallback NTP servers (will only sync if time is severely off)" >> "$temp_crontab"
-            echo "30 */6 * * * [ \$(date +\%s) -lt \$(date -d '1 day ago' +\%s) ] && (ntpdate -4 -s pool.ntp.org || ntpdate -4 -s 0.pool.ntp.org)" >> "$temp_crontab"
+            echo "30 */6 * * * [ \$(date '+\%s') -lt \$(date -d '1 day ago' +\%s) ] && (ntpdate -4 -s pool.ntp.org || ntpdate -4 -s 0.pool.ntp.org)" >> "$temp_crontab"
             
             # Install new crontab
             if crontab "$temp_crontab"; then
