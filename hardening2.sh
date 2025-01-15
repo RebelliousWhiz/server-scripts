@@ -1099,6 +1099,13 @@ EOF
 configure_automatic_updates() {
     log "INFO" "Configuring automatic security updates..."
 
+    if ! command -v unattended-upgrades >/dev/null 2>&1; then
+        install_package unattended-upgrades || {
+            log "ERROR" "Failed to install unattended-upgrades"
+            return 1
+        }
+    }
+
     if [[ "$OS" == "ubuntu" ]]; then
         cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
 Unattended-Upgrade::Allowed-Origins {
@@ -1118,12 +1125,38 @@ APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
+    elif [[ "$OS" == "debian" ]]; then
+        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=\${distro_codename},label=Debian-Security";
+};
+Unattended-Upgrade::Package-Blacklist {
+};
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Install-on-Shutdown "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
     fi
 
-    systemctl enable unattended-upgrades
-    systemctl restart unattended-upgrades
-    
+    # Enable and start the service
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "INFO" "LXC detected - skipping systemd service management"
+    else
+        systemctl enable unattended-upgrades
+        systemctl restart unattended-upgrades
+    fi
+
     log "INFO" "Automatic security updates configured"
+    return 0
 }
 
 detect_ssh_port() {
