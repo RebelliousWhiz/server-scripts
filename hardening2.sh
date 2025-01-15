@@ -366,15 +366,8 @@ configure_ssh_keys() {
     local username=$(basename "$user_home")
     local auth_keys_file="$user_home/.ssh/authorized_keys"
     
-    # Create temporary file with proper error handling
-    local temp_key_file
-    temp_key_file=$(mktemp) || {
-        log "ERROR" "Failed to create temporary file for key input"
-        return 1
-    }
-    
-    # Add cleanup trap
-    trap 'rm -f "$temp_key_file"' RETURN
+    # Initialize temp_key_file at the beginning
+    local temp_key_file=""
 
     # Skip root user
     [[ "$username" == "root" ]] && return 0
@@ -499,16 +492,6 @@ configure_user_environment() {
         return 0
     }
 
-    # Initialize temp_key_file with proper error handling
-    local temp_key_file
-    temp_key_file=$(mktemp) || {
-        log "ERROR" "Failed to create temporary file"
-        return 1
-    }
-    
-    # Add cleanup trap for temp_key_file
-    trap 'rm -f "$temp_key_file"' RETURN
-
     # Backup existing configuration files
     local config_files=(
         "$user_home/.bashrc"
@@ -625,7 +608,6 @@ set history=1000
 
 " UI Settings
 set ruler
-set number
 set showcmd
 set showmode
 set showmatch
@@ -905,7 +887,7 @@ configure_users() {
         if ! id "$username" >/dev/null 2>&1; then
             log "WARNING" "User $username does not exist in system"
             continue
-        }
+        fi
 
         # Get user shell
         shell=$(getent passwd "$username" | cut -d: -f7)
@@ -1468,8 +1450,9 @@ EOF
         log "INFO" "Audit configuration completed for LXC environment"
         return 0
     else
-        # Original audit configuration for non-LXC environments
-        # ... (keep existing configuration for non-LXC)
+        systemctl enable auditd
+        service auditd restart
+        log "INFO" "System auditing configured"
     fi
 }
 
