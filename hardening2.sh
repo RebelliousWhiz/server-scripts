@@ -331,6 +331,16 @@ configure_ssh_keys() {
     local username=$(basename "$user_home")
     local auth_keys_file="$user_home/.ssh/authorized_keys"
     
+    # Create temporary file with proper error handling
+    local temp_key_file
+    temp_key_file=$(mktemp) || {
+        log "ERROR" "Failed to create temporary file for key input"
+        return 1
+    }
+    
+    # Add cleanup trap
+    trap 'rm -f "$temp_key_file"' RETURN
+
     # Skip root user
     [[ "$username" == "root" ]] && return 0
     
@@ -447,6 +457,16 @@ configure_user_environment() {
     local username=$(basename "$user_home")
     
     log "INFO" "Configuring environment for user: $username"
+
+    # Initialize temp_key_file as local variable with proper error handling
+    local temp_key_file
+    temp_key_file=$(mktemp) || {
+        log "ERROR" "Failed to create temporary file"
+        return 1
+    }
+    
+    # Add cleanup trap for temp_key_file at the beginning
+    trap 'rm -f "$temp_key_file"' RETURN
 
     # Add SSH keys for users
     configure_ssh_keys "$user_home" || {
