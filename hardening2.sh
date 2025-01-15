@@ -458,62 +458,64 @@ configure_user_environment() {
     
     log "INFO" "Configuring environment for user: $username"
 
-    # Initialize temp_key_file as local variable with proper error handling
+    # Skip if not a valid home directory
+    [[ ! -d "$user_home" ]] && {
+        log "WARNING" "Invalid home directory for user: $username"
+        return 0
+    }
+
+    # Initialize temp_key_file with proper error handling
     local temp_key_file
     temp_key_file=$(mktemp) || {
         log "ERROR" "Failed to create temporary file"
         return 1
     }
     
-    # Add cleanup trap for temp_key_file at the beginning
+    # Add cleanup trap for temp_key_file
     trap 'rm -f "$temp_key_file"' RETURN
 
-    # Add SSH keys for users
-    configure_ssh_keys "$user_home" || {
-        log "WARNING" "Failed to configure SSH keys for user $username"
-    }
+    # Backup existing configuration files
+    local config_files=(
+        "$user_home/.bashrc"
+        "$user_home/.bash_profile"
+        "$user_home/.profile"
+    )
 
-    # Skip if not a valid home directory
-    [[ ! -d "$user_home" ]] && return 0
+    for file in "${config_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            create_backup "$file" || {
+                log "WARNING" "Failed to backup $file"
+                continue
+            }
+        fi
+    done
 
-    # Handle force_color_prompt for all users
+    # Configure bash environment
     if [[ -f "$user_home/.bashrc" ]]; then
-        create_backup "$user_home/.bashrc"
-        
+        # Configure color prompt
         if grep -q "^#force_color_prompt=yes" "$user_home/.bashrc"; then
-            sed -i "s/^#force_color_prompt=yes/force_color_prompt=yes/" "$user_home/.bashrc"
-        else
+            sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' "$user_home/.bashrc"
+        elif ! grep -q "^force_color_prompt=yes" "$user_home/.bashrc"; then
             echo "force_color_prompt=yes" >> "$user_home/.bashrc"
         fi
 
-        # Modify PS1 prompt based on OS
+        # Configure PS1 prompt based on user and OS
+        local PS1_CONFIG
         if [[ "$username" == "root" ]]; then
-            if [[ "$OS" == "ubuntu" ]]; then
-                sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
-                if [ "$color_prompt" = yes ]; then\
-                    PS1='\'${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '\''\
-                else\
-                    PS1='\'${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ '\''\
-                fi\
-                unset color_prompt force_color_prompt' "$user_home/.bashrc"
-            elif [[ "$OS" == "debian" ]]; then
-                echo "PS1='${debian_chroot:+($debian_chroot)}\\[\\033[01;31m\\]\\u\\[\\033[01;32m\\]@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '" >> "$user_home/.bashrc"
-
-                # Add additional configurations for Debian
-                cat >> "$user_home/.bashrc" << 'EOF'
-alias ls='ls --color=auto'
-if ! shopt -oq posix; then
-    if [ -f /usr/share/bash-completion/bash_completion ]; then
-        . /usr/share/bash-completion/bash_completion
-    elif [ -f /etc/bash_completion ]; then
-        . /etc/bash_completion
-    fi
-fi
-EOF
-            fi
+            PS1_CONFIG='\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+        else
+            PS1_CONFIG='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
         fi
 
-        # Rest of the existing .bashrc configurations...
+        # Update PS1 in .bashrc
+        sed -i '/^if \[ "\$color_prompt" = yes \]/,/^fi/c\
+if [ "$color_prompt" = yes ]; then\
+    PS1="'"${PS1_CONFIG}"'"\
+else\
+    PS1="${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ "\
+fi' "$user_home/.bashrc"
+
+        # Add additional bash configurations
         cat >> "$user_home/.bashrc" <<'EOF'
 
 # Security aliases
@@ -523,12 +525,15 @@ alias mv='mv -i'
 alias ls='ls --color=auto'
 alias ll='ls -lah'
 alias grep='grep --color=auto'
+alias sudo='sudo '
 
 # History settings
-HISTCONTROL=ignoreboth
+HISTCONTROL=ignoreboth:erasedups
 HISTSIZE=1000
 HISTFILESIZE=2000
 HISTTIMEFORMAT="%F %T "
+PROMPT_COMMAND="history -a"
+shopt -s histappend
 
 # Security measures
 umask 027
@@ -542,44 +547,104 @@ if ! shopt -oq posix; then
         . /etc/bash_completion
     fi
 fi
+
+# Path configuration
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Set default editor
+export EDITOR=vim
+export VISUAL=vim
+
+# Locale settings
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# Default less options
+export LESS='-R -i -g -c -W'
+
+# Colored GCC warnings and errors
+export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 EOF
     fi
 
-    # Configure vim
+    # Configure vim settings
     cat > "$user_home/.vimrc" <<'EOF'
-syntax on
+" Basic Settings
 set nocompatible
-set backspace=2
-filetype on
-filetype plugin on
-filetype indent on
-set expandtab
-set tabstop=2
-set shiftwidth=2
-set softtabstop=2
-set autoindent
+syntax on
+filetype plugin indent on
+
+" Security Settings
+set modelines=0
+set nomodeline
+
+" Editor Settings
+set encoding=utf-8
+set backspace=indent,eol,start
+set hidden
+set nobackup
+set noswapfile
+set noundofile
+set directory=/tmp
+set history=1000
+
+" UI Settings
 set ruler
+set number
+set showcmd
+set showmode
+set showmatch
+set laststatus=2
+set wildmenu
+set visualbell
+set t_vb=
+
+" Search Settings
 set hlsearch
 set incsearch
 set ignorecase
 set smartcase
-set backup
-set backupdir=/tmp
-set writebackup
-set history=500
-set showcmd
-set showmode
-set showmatch
-set visualbell
-set nowrap
-set encoding=utf-8
+
+" Indentation Settings
+set autoindent
+set smartindent
+set expandtab
+set tabstop=4
+set shiftwidth=4
+set softtabstop=4
+set wrap
+set textwidth=79
+set formatoptions=qrn1
+set colorcolumn=80
+
+" Performance Settings
+set lazyredraw
+set ttyfast
+
+" Security Settings
+set secure
 EOF
 
-    # Configure SSH directory
+    # Configure SSH directory and permissions
     local ssh_dir="$user_home/.ssh"
     if [[ ! -d "$ssh_dir" ]]; then
-        mkdir -p "$ssh_dir"
-        chmod 700 "$ssh_dir"
+        mkdir -p "$ssh_dir" || {
+            log "ERROR" "Failed to create SSH directory for user $username"
+            return 1
+        }
+    fi
+    chmod 700 "$ssh_dir"
+    chown "$username:$username" "$ssh_dir"
+
+    # Configure authorized_keys file if it doesn't exist
+    local auth_keys="$ssh_dir/authorized_keys"
+    if [[ ! -f "$auth_keys" ]]; then
+        touch "$auth_keys" || {
+            log "ERROR" "Failed to create authorized_keys file for user $username"
+            return 1
+        }
+        chmod 600 "$auth_keys"
+        chown "$username:$username" "$auth_keys"
     fi
 
     # Configure bash_logout
@@ -593,64 +658,46 @@ history -c
 
 # Secure SSH agent
 if [ -n "$SSH_AGENT_PID" ]; then
-    eval "$(ssh-agent -k)"
+    eval "$(ssh-agent -k)" >/dev/null 2>&1
 fi
+
+# Clear SSH keys from memory
+ssh-add -D >/dev/null 2>&1
+
+# Clear clipboard if available
+if command -v xsel >/dev/null 2>&1; then
+    xsel -c
+elif command -v xclip >/dev/null 2>&1; then
+    xclip -i /dev/null
+fi
+
+# Clear temporary files
+rm -rf "$HOME/.local/share/Trash"/*
+rm -rf "$HOME/tmp"/*
 EOF
 
-    # Set proper ownership and permissions
-    chown -R "$username:$username" "$user_home/.vimrc" "$user_home/.bash_logout"
-    chmod 644 "$user_home/.vimrc" "$user_home/.bash_logout"
+    # Set proper ownership and permissions for all configuration files
+    local config_files=(
+        "$user_home/.vimrc"
+        "$user_home/.bash_logout"
+        "$user_home/.bashrc"
+    )
 
-    log "INFO" "Completed environment configuration for user: $username"
-}
-
-setup_sudo_user() {
-    log "INFO" "Configuring sudo access..."
-    
-    # Check if running in non-interactive mode
-    if [[ ! -t 0 ]]; then
-        log "ERROR" "This script must be run interactively for sudo configuration"
-        log "INFO" "Please run: bash -i /tmp/hardening.sh"
-        return 1
-    fi
-    
-    if ! command -v sudo >/dev/null 2>&1; then
-        log "INFO" "Installing sudo package..."
-        install_package sudo || return 1
-    fi
-
-    # Show available users and configure sudo access
-    local users=()
-    while IFS= read -r -d '' dir; do
-        local username=$(basename "$dir")
-        if [[ "$username" != "root" && -d "/home/$username" ]]; then
-            users+=("$username")
-        fi
-    done < <(find /home -maxdepth 1 -mindepth 1 -type d -print0)
-
-    if (( ${#users[@]} == 0 )); then
-        log "WARNING" "No regular users found to grant sudo access"
-        return 0
-    fi
-
-    echo "Available users:"
-    PS3="Select user to grant sudo access (enter number): "
-    select username in "${users[@]}"; do
-        if [[ -n "$username" ]]; then
-            log "INFO" "Adding user $username to sudo group"
-            usermod -aG sudo "$username"
-            
-            # Configure sudo settings
-            echo "$username ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/$username"
-            chmod 440 "/etc/sudoers.d/$username"
-            
-            log "INFO" "Successfully configured sudo access for $username"
-            break
-        else
-            echo "Invalid selection. Please try again."
-            continue
+    for file in "${config_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            chown "$username:$username" "$file"
+            chmod 644 "$file"
         fi
     done
+
+    # Add SSH keys for users if running interactively
+    if [[ -t 0 && -t 1 ]]; then
+        configure_ssh_keys "$user_home" || {
+            log "WARNING" "Failed to configure SSH keys for user $username"
+        }
+    fi
+
+    log "INFO" "Completed environment configuration for user: $username"
     return 0
 }
 
