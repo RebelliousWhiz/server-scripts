@@ -701,6 +701,56 @@ EOF
     return 0
 }
 
+setup_sudo_user() {
+    log "INFO" "Configuring sudo access..."
+    
+    # Check if running in non-interactive mode
+    if [[ ! -t 0 ]]; then
+        log "ERROR" "This script must be run interactively for sudo configuration"
+        log "INFO" "Please run: bash -i /tmp/hardening.sh"
+        return 1
+    fi
+    
+    if ! command -v sudo >/dev/null 2>&1; then
+        log "INFO" "Installing sudo package..."
+        install_package sudo || return 1
+    fi
+
+    # Show available users and configure sudo access
+    local users=()
+    while IFS= read -r -d '' dir; do
+        local username=$(basename "$dir")
+        if [[ "$username" != "root" && -d "/home/$username" ]]; then
+            users+=("$username")
+        fi
+    done < <(find /home -maxdepth 1 -mindepth 1 -type d -print0)
+
+    if (( ${#users[@]} == 0 )); then
+        log "WARNING" "No regular users found to grant sudo access"
+        return 0
+    fi
+
+    echo "Available users:"
+    PS3="Select user to grant sudo access (enter number): "
+    select username in "${users[@]}"; do
+        if [[ -n "$username" ]]; then
+            log "INFO" "Adding user $username to sudo group"
+            usermod -aG sudo "$username"
+            
+            # Configure sudo settings
+            echo "$username ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/$username"
+            chmod 440 "/etc/sudoers.d/$username"
+            
+            log "INFO" "Successfully configured sudo access for $username"
+            break
+        else
+            echo "Invalid selection. Please try again."
+            continue
+        fi
+    done
+    return 0
+}
+
 # Main package installation
 install_base_packages() {
     log "INFO" "Installing base packages..."
@@ -1146,13 +1196,6 @@ EOF
 configure_automatic_updates() {
     log "INFO" "Configuring automatic security updates..."
 
-    if ! command -v unattended-upgrades >/dev/null 2>&1; then
-        install_package unattended-upgrades || {
-            log "ERROR" "Failed to install unattended-upgrades"
-            return 1
-        }
-    }
-
     if [[ "$OS" == "ubuntu" ]]; then
         cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
 Unattended-Upgrade::Allowed-Origins {
@@ -1172,38 +1215,12 @@ APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
-    elif [[ "$OS" == "debian" ]]; then
-        cat > /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
-Unattended-Upgrade::Origins-Pattern {
-    "origin=Debian,codename=\${distro_codename},label=Debian-Security";
-};
-Unattended-Upgrade::Package-Blacklist {
-};
-Unattended-Upgrade::AutoFixInterruptedDpkg "true";
-Unattended-Upgrade::MinimalSteps "true";
-Unattended-Upgrade::Install-on-Shutdown "false";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
-EOF
-
-        cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Download-Upgradeable-Packages "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
     fi
 
-    # Enable and start the service
-    if systemd-detect-virt --container | grep -q "lxc"; then
-        log "INFO" "LXC detected - skipping systemd service management"
-    else
-        systemctl enable unattended-upgrades
-        systemctl restart unattended-upgrades
-    fi
-
+    systemctl enable unattended-upgrades
+    systemctl restart unattended-upgrades
+    
     log "INFO" "Automatic security updates configured"
-    return 0
 }
 
 detect_ssh_port() {
