@@ -892,14 +892,52 @@ EOF
     log "INFO" "Automatic security updates configured"
 }
 
-# Execute security configurations
-read -r -p "Enter desired SSH port [22]: " ssh_port
-ssh_port=${ssh_port:-22}
+detect_ssh_port() {
+    local current_port
 
-if ! [[ "$ssh_port" =~ ^[0-9]+$ ]] || (( ssh_port < 1 || ssh_port > 65535 )); then
-    log "ERROR" "Invalid SSH port number"
-    exit 1
+    # Try to get port from sshd_config first
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        current_port=$(grep -E "^Port [0-9]+" /etc/ssh/sshd_config | awk '{print $2}')
+    fi
+
+    # If not found in config, try to detect from running service
+    if [[ -z "$current_port" ]]; then
+        current_port=$(ss -tlpn | grep sshd | awk '{print $4}' | cut -d':' -f2 | head -1)
+    fi
+
+    # Default to 22 if still not found
+    echo "${current_port:-22}"
+}
+
+current_ssh_port=$(detect_ssh_port)
+log "INFO" "Current SSH port: $current_ssh_port"
+
+read -r -p "Do you want to modify the SSH port? (y/n): " modify_ssh_port
+if [[ "$modify_ssh_port" =~ ^[Yy]$ ]]; then
+    while true; do
+        read -r -p "Enter new SSH port [current: $current_ssh_port]: " new_ssh_port
+        
+        # If user just pressed enter, keep current port
+        if [[ -z "$new_ssh_port" ]]; then
+            ssh_port=$current_ssh_port
+            break
+        fi
+        
+        # Validate port number
+        if [[ "$new_ssh_port" =~ ^[0-9]+$ ]] && \
+           (( new_ssh_port >= 1 && new_ssh_port <= 65535 )) && \
+           (( new_ssh_port != 21 && new_ssh_port != 80 && new_ssh_port != 443 )); then
+            ssh_port=$new_ssh_port
+            break
+        else
+            log "ERROR" "Invalid port number. Please enter a number between 1-65535 (excluding 21, 80, 443)"
+        fi
+    done
+else
+    ssh_port=$current_ssh_port
 fi
+
+log "INFO" "SSH port will be set to: $ssh_port"
 
 configure_ssh
 configure_firewall
