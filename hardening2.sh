@@ -23,16 +23,18 @@ install_prerequisites() {
     fi
 
     # Verify systemd is running
-    if ! pidof systemd >/dev/null 2>&1; then
-        log "WARNING" "systemd installed but not running. A system reboot is required."
-        echo "System needs to be rebooted to complete systemd installation."
-        read -r -p "Would you like to reboot now? (y/n): " response
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            log "INFO" "Rebooting system..."
-            reboot
-        else
-            log "ERROR" "Cannot continue without systemd running"
-            return 1
+    if ! command -v systemd-detect-virt >/dev/null 2>&1 || ! systemd-detect-virt --container | grep -q "lxc"; then
+        if ! pidof systemd >/dev/null 2>&1; then
+            log "WARNING" "systemd installed but not running. A system reboot is required."
+            echo "System needs to be rebooted to complete systemd installation."
+            read -r -p "Would you like to reboot now? (y/n): " response
+            if [[ "`$response" =~ ^[Yy]$` ]]; then
+                log "INFO" "Rebooting system..."
+                reboot
+            else
+                log "ERROR" "Cannot continue without systemd running"
+                return 1
+            fi
         fi
     fi
 
@@ -994,7 +996,7 @@ configure_sysctl() {
     local is_lxc=false
     if systemd-detect-virt --container | grep -q "lxc"; then
         is_lxc=true
-        log "WARNING" "Running in LXC container - some sysctl parameters may not apply"
+        log "WARNING" "Running in LXC - skipping kernel.* parameters"
     fi
 
     cat > /etc/sysctl.d/99-security.conf <<EOF
@@ -1253,6 +1255,12 @@ configure_process_accounting() {
 
 harden_filesystem() {
     log "INFO" "Hardening filesystem..."
+
+    # Check if running in LXC
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "WARNING" "Running in LXC container - some filesystem modifications will be skipped"
+        return 0
+    fi
 
     # Update fstab with secure mount options
     create_backup /etc/fstab
