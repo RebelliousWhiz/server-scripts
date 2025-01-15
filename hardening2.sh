@@ -597,9 +597,87 @@ for user_home in /root /home/*; do
     configure_user_environment "$user_home"
 done
 
+# Disable ssh.socket in LXC
+check_ssh_socket() {
+    log "INFO" "Checking SSH service configuration..."
+    
+    # Check if running in LXC container
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "INFO" "LXC container detected, checking ssh.socket status"
+        
+        local socket_active=false
+        local socket_enabled=false
+        
+        # Check if ssh.socket is active
+        if systemctl is-active ssh.socket >/dev/null 2>&1; then
+            socket_active=true
+            log "INFO" "ssh.socket is currently active"
+        fi
+        
+        # Check if ssh.socket is enabled
+        if systemctl is-enabled ssh.socket >/dev/null 2>&1; then
+            socket_enabled=true
+            log "INFO" "ssh.socket is currently enabled"
+        fi
+        
+        # If socket is active or enabled, switch to service
+        if $socket_active || $socket_enabled; then
+            log "INFO" "Switching from ssh.socket to ssh.service..."
+            
+            # Stop and disable socket
+            if $socket_active; then
+                log "INFO" "Stopping ssh.socket..."
+                if ! systemctl stop ssh.socket; then
+                    log "ERROR" "Failed to stop ssh.socket"
+                    return 1
+                fi
+            fi
+            
+            if $socket_enabled; then
+                log "INFO" "Disabling ssh.socket..."
+                if ! systemctl disable ssh.socket; then
+                    log "ERROR" "Failed to disable ssh.socket"
+                    return 1
+                fi
+            fi
+            
+            # Enable and start ssh service
+            log "INFO" "Enabling and starting ssh.service..."
+            if ! systemctl enable ssh.service; then
+                log "ERROR" "Failed to enable ssh.service"
+                return 1
+            fi
+            
+            if ! systemctl start ssh.service; then
+                log "ERROR" "Failed to start ssh.service"
+                return 1
+            fi
+            
+            # Verify service status
+            if systemctl is-active ssh.service >/dev/null 2>&1; then
+                log "INFO" "Successfully switched to ssh.service"
+            else
+                log "ERROR" "ssh.service failed to start properly"
+                return 1
+            fi
+        else
+            log "INFO" "ssh.socket is not active or enabled, no changes needed"
+        fi
+    else
+        log "INFO" "Not running in LXC container, skipping socket check"
+    fi
+    
+    return 0
+}
+
 # Security Configuration Functions
 configure_ssh() {
     log "INFO" "Configuring SSH security settings..."
+
+    check_ssh_socket || {
+        log "ERROR" "Failed to configure SSH socket/service"
+        return 1
+    }
     
     create_backup /etc/ssh/sshd_config
     
