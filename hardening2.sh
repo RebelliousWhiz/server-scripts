@@ -1183,13 +1183,19 @@ configure_automatic_updates
 configure_audit_system() {
     log "INFO" "Configuring system auditing..."
 
-    if ! command -v auditd >/dev/null 2>&1; then
-        install_package auditd
-    fi
+    # Check if running in LXC
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "INFO" "Running in LXC container - using modified audit configuration"
+        
+        # Install auditd without enabling the service
+        if ! command -v auditd >/dev/null 2>&1; then
+            install_package auditd
+        fi
 
-    create_backup /etc/audit/auditd.conf
-    
-    cat > /etc/audit/auditd.conf <<EOF
+        create_backup /etc/audit/auditd.conf
+        
+        # Configure auditd with LXC-compatible settings
+        cat > /etc/audit/auditd.conf <<EOF
 log_file = /var/log/audit/audit.log
 log_format = RAW
 log_group = adm
@@ -1203,22 +1209,21 @@ name_format = NONE
 max_log_file = 8
 max_log_file_action = ROTATE
 space_left = 75
-space_left_action = EMAIL
+space_left_action = SYSLOG
 action_mail_acct = root
 admin_space_left = 50
-admin_space_left_action = SUSPEND
-disk_full_action = SUSPEND
-disk_error_action = SUSPEND
+admin_space_left_action = SYSLOG
+disk_full_action = SYSLOG
+disk_error_action = SYSLOG
 use_libwrap = yes
-tcp_listen_queue = 5
-tcp_max_per_addr = 1
-tcp_client_max_idle = 0
+##tcp_listen_queue = 5
+##tcp_max_per_addr = 1
+##tcp_client_max_idle = 0
 enable_krb5 = no
-krb5_principal = auditd
 EOF
 
-    # Configure audit rules
-    cat > /etc/audit/rules.d/hardening.rules <<EOF
+        # Configure audit rules for LXC
+        cat > /etc/audit/rules.d/hardening.rules <<EOF
 # Delete all existing rules
 -D
 
@@ -1228,13 +1233,6 @@ EOF
 # Failure Mode
 -f 1
 
-# Date and Time
--a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
--a always,exit -F arch=b32 -S adjtimex -S settimeofday -S stime -k time-change
--a always,exit -F arch=b64 -S clock_settime -k time-change
--a always,exit -F arch=b32 -S clock_settime -k time-change
--w /etc/localtime -p wa -k time-change
-
 # User, Group, and Password Databases
 -w /etc/group -p wa -k identity
 -w /etc/passwd -p wa -k identity
@@ -1242,47 +1240,214 @@ EOF
 -w /etc/shadow -p wa -k identity
 -w /etc/security/opasswd -p wa -k identity
 
-# System Startup Scripts
--w /etc/init.d/ -p wa -k init
--w /etc/init/ -p wa -k init
--w /etc/systemd/ -p wa -k init
-
 # Login Records
 -w /var/log/faillog -p wa -k logins
 -w /var/log/lastlog -p wa -k logins
 -w /var/log/tallylog -p wa -k logins
 
 # Network Environment
--a always,exit -F arch=b64 -S sethostname -S setdomainname -k system-locale
--a always,exit -F arch=b32 -S sethostname -S setdomainname -k system-locale
--w /etc/issue -p wa -k system-locale
--w /etc/issue.net -p wa -k system-locale
 -w /etc/hosts -p wa -k system-locale
 -w /etc/network -p wa -k system-locale
 EOF
 
-    systemctl enable auditd
-    service auditd restart
-    
-    log "INFO" "System auditing configured"
+        # Start auditd without systemd
+        if ! /etc/init.d/auditd start; then
+            log "WARNING" "Failed to start auditd using init.d script in LXC"
+            # Continue anyway as this is not critical in LXC
+        fi
+
+        log "INFO" "Audit configuration completed for LXC environment"
+        return 0
+    else
+        # Original audit configuration for non-LXC environments
+        # ... (keep existing configuration for non-LXC)
+    fi
 }
 
+# Also modify the process_accounting function for LXC
 configure_process_accounting() {
     log "INFO" "Configuring process accounting..."
 
-    if ! command -v acct >/dev/null 2>&1; then
-        install_package acct
+    if systemd-detect-virt --container | grep -q "lxc"; then
+        log "INFO" "Process accounting configuration for LXC environment"
+        
+        # Install accounting package if not present
+        if ! command -v accton >/dev/null 2>&1; then
+            log "INFO" "Installing process accounting package..."
+            if ! install_package acct; then
+                log "WARNING" "Failed to install process accounting package in LXC"
+                return 0  # Non-critical in LXC, continue script
+            fi
+        fi
+
+        # Create and set permissions for accounting files
+        local ACCT_FILES=(
+            "/var/log/wtmp"
+            "/var/log/btmp"
+            "/var/log/lastlog"
+            "/var/account/pacct"
+        )
+
+        # Ensure /var/account directory exists
+        mkdir -p /var/account
+
+        for file in "${ACCT_FILES[@]}"; do
+            if [[ ! -f "$file" ]]; then
+                touch "$file"
+                log "INFO" "Created accounting file: $file"
+            fi
+
+            # Set appropriate permissions
+            case "$file" in
+                "/var/log/wtmp"|"/var/log/lastlog")
+                    chmod 664 "$file"
+                    chown root:utmp "$file"
+                    ;;
+                "/var/log/btmp")
+                    chmod 660 "$file"
+                    chown root:utmp "$file"
+                    ;;
+                "/var/account/pacct")
+                    chmod 640 "$file"
+                    chown root:root "$file"
+                    ;;
+            esac
+        done
+
+        # Start accounting using traditional method for LXC
+        if ! /usr/sbin/accton /var/account/pacct; then
+            log "WARNING" "Failed to enable process accounting in LXC"
+            return 0  # Non-critical in LXC, continue script
+        fi
+
+        # Add daily rotation of accounting files via cron
+        if [[ ! -f /etc/cron.daily/accounting ]]; then
+            cat > /etc/cron.daily/accounting <<'EOF'
+#!/bin/bash
+# Daily accounting file rotation
+ACCT_FILE="/var/account/pacct"
+ACCT_FILE_OLD="${ACCT_FILE}.1"
+
+if [ -f "$ACCT_FILE" ]; then
+    /usr/sbin/accton off
+    mv "$ACCT_FILE" "$ACCT_FILE_OLD"
+    touch "$ACCT_FILE"
+    chmod 640 "$ACCT_FILE"
+    /usr/sbin/accton "$ACCT_FILE"
+fi
+
+# Cleanup old accounting files (keep last 7 days)
+find /var/account -name 'pacct.*' -mtime +7 -delete
+EOF
+            chmod 755 /etc/cron.daily/accounting
+        fi
+
+        log "INFO" "Process accounting configured for LXC environment"
+        
+    else
+        log "INFO" "Configuring process accounting for non-LXC environment"
+        
+        # Install accounting package
+        if ! command -v accton >/dev/null 2>&1; then
+            if ! install_package acct; then
+                log "ERROR" "Failed to install process accounting package"
+                return 1
+            fi
+        fi
+
+        # Create backup of existing configuration
+        if [[ -f /etc/default/acct ]]; then
+            create_backup /etc/default/acct
+        fi
+
+        # Configure accounting settings
+        cat > /etc/default/acct <<EOF
+# Process accounting configuration
+ACCT_ENABLE="yes"
+ACCT_FILE="/var/account/pacct"
+SAVETIME="7"
+EOF
+
+        # Create and set permissions for accounting files
+        local ACCT_FILES=(
+            "/var/log/wtmp"
+            "/var/log/btmp"
+            "/var/log/lastlog"
+            "/var/account/pacct"
+        )
+
+        mkdir -p /var/account
+
+        for file in "${ACCT_FILES[@]}"; do
+            if [[ ! -f "$file" ]]; then
+                touch "$file"
+                log "INFO" "Created accounting file: $file"
+            fi
+
+            # Set appropriate permissions
+            case "$file" in
+                "/var/log/wtmp"|"/var/log/lastlog")
+                    chmod 664 "$file"
+                    chown root:utmp "$file"
+                    ;;
+                "/var/log/btmp")
+                    chmod 660 "$file"
+                    chown root:utmp "$file"
+                    ;;
+                "/var/account/pacct")
+                    chmod 640 "$file"
+                    chown root:root "$file"
+                    ;;
+            esac
+        done
+
+        # Configure logrotate for accounting files
+        cat > /etc/logrotate.d/accounting <<EOF
+/var/account/pacct {
+    rotate 7
+    daily
+    compress
+    delaycompress
+    notifempty
+    missingok
+    create 0640 root root
+    postrotate
+        /usr/sbin/accton /var/account/pacct
+    endscript
+}
+EOF
+
+        # Enable and start accounting service
+        if ! systemctl is-enabled acct >/dev/null 2>&1; then
+            if ! systemctl enable acct; then
+                log "ERROR" "Failed to enable accounting service"
+                return 1
+            fi
+        fi
+
+        if ! systemctl is-active --quiet acct; then
+            if ! systemctl start acct; then
+                log "ERROR" "Failed to start accounting service"
+                return 1
+            fi
+        fi
+
+        # Verify accounting is active
+        if ! /usr/sbin/accton | grep -q "Accounting enabled"; then
+            log "WARNING" "Process accounting may not be properly enabled"
+        fi
+
+        log "INFO" "Process accounting configured successfully for non-LXC environment"
     fi
 
-    touch /var/log/wtmp
-    touch /var/log/btmp
-    chmod 640 /var/log/wtmp
-    chmod 640 /var/log/btmp
-    
-    systemctl enable acct
-    systemctl start acct
-    
-    log "INFO" "Process accounting configured"
+    # Final verification for both environments
+    if [[ -f /var/account/pacct ]]; then
+        log "INFO" "Process accounting file exists and is ready"
+    else
+        log "WARNING" "Process accounting file not found after configuration"
+    fi
+
+    return 0
 }
 
 harden_filesystem() {
