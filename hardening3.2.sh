@@ -276,7 +276,7 @@ configure_root_bashrc() {
     local bashrc="/root/.bashrc"
     backup_file "$bashrc"
 
-    if [ "${distro}" = "debian" ] && [ "${is_lxc}" = false ]; then
+    if [ "${distro}" = "debian" ]; then
         # Debian specific configuration
         local debian_config='force_color_prompt=yes
 PS1='"'"'\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
@@ -295,7 +295,7 @@ fi'
             log "Added color prompt and bash completion to root bashrc"
         fi
     elif [ "${distro}" = "ubuntu" ]; then
-        # Ubuntu specific configuration
+        # Ubuntu specific configuration remains the same
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
         
         # Replace PS1
