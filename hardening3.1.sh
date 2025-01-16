@@ -191,6 +191,73 @@ detect_system() {
     log "System detection: Distribution=$distro"
 }
 
+remove_snap() {
+    if [ "${distro}" != "ubuntu" ]; then
+        return 0
+    fi
+
+    log "Checking Snap packages..."
+    
+    if ! command -v snap >/dev/null 2>&1; then
+        log "Snap is not installed on this system"
+        return 0
+    }
+
+    log "Removing Snap and preventing its reinstallation..."
+    
+    # Stop snapd services
+    systemctl stop snapd.service snapd.socket snapd.seeded.service 2>/dev/null || true
+    systemctl disable snapd.service snapd.socket snapd.seeded.service 2>/dev/null || true
+
+    # Remove snap packages
+    local snap_packages
+    snap_packages=$(snap list 2>/dev/null | awk 'NR>1 {print $1}')
+    
+    if [ -n "$snap_packages" ]; then
+        while IFS= read -r pkg; do
+            if [ -n "$pkg" ]; then
+                log "Removing snap package: $pkg"
+                snap remove --purge "$pkg" >/dev/null 2>&1 || \
+                    warn "Failed to remove snap package: $pkg"
+            fi
+        done <<< "$snap_packages"
+    fi
+    
+    # Remove snapd package
+    log "Removing snapd package..."
+    apt-get remove --purge snapd -y || warn "Failed to remove snapd package"
+    apt-get autoremove --purge -y
+
+    # Clean up snap directories
+    local snap_dirs=("/snap" "/var/snap" "/var/lib/snapd" "/var/cache/snapd" "/usr/lib/snapd")
+    for dir in "${snap_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            rm -rf "$dir"
+            log "Removed directory: $dir"
+        fi
+    done
+
+    # Prevent snapd from being installed again
+    log "Blocking snap from future installation..."
+    cat > /etc/apt/preferences.d/nosnap.pref << 'EOF'
+Package: snapd
+Pin: release a=*
+Pin-Priority: -1
+EOF
+
+    # Remove snap-related apt source
+    if [ -f /etc/apt/sources.list.d/snap-*.list ]; then
+        rm -f /etc/apt/sources.list.d/snap-*.list
+        log "Removed snap repository configuration"
+    fi
+
+    # Update package list after removal
+    apt-get update
+
+    log "Snap has been removed and blocked from future installation"
+    return 0
+}
+
 configure_ssh_for_user() {
     local user=$1
     local user_home="/home/${user}"
@@ -441,6 +508,9 @@ main() {
     # Detect environment and system
     detect_environment
     detect_system
+
+    # Remove snap from Ubuntu
+    remove_snap
 
     # Comment CDROM source in Debian
     if [ "${distro}" = "debian" ] && [ "${is_lxc}" = false ]; then
