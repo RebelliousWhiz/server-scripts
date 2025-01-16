@@ -209,15 +209,28 @@ for user in $(ls /home); do
     chown "${user}:${user}" "/home/${user}/.vimrc"
 done
 
-log "Debug: Before SSH server configuration"
+# Get current SSH port, default to 22 if not explicitly set
+current_port=$(grep -i "^Port" /etc/ssh/sshd_config | awk '{print $2}' || echo "22")
+log "Current SSH port: ${current_port}"
 
-# SSH server configuration
-current_port=$(grep -i "^Port" /etc/ssh/sshd_config | awk '{print $2}')
-log "Current SSH port: ${current_port:-22}"
+# Ensure we have a valid port number
+if [[ ! "$current_port" =~ ^[0-9]+$ ]]; then
+    current_port="22"
+    log "Using default port: ${current_port}"
+fi
+
 read -p "Change SSH port? (y/n): " change_port
+log "Debug: After SSH port prompt"
+
 if [[ $change_port =~ ^[Yy]$ ]]; then
     read -p "Enter new SSH port: " new_port
-    sed -i "s/^#\?Port .*/Port ${new_port}/" /etc/ssh/sshd_config
+    if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then
+        sed -i '/^Port /d' /etc/ssh/sshd_config  # Remove existing Port line if any
+        echo "Port ${new_port}" >> /etc/ssh/sshd_config
+        log "SSH port changed to: ${new_port}"
+    else
+        log "Invalid port number. Keeping current port: ${current_port}"
+    fi
 fi
 
 # SSH hardening
@@ -236,8 +249,6 @@ ClientAliveCountMax 10
 TCPKeepAlive no
 Compression no
 EOF
-
-log "Debug: After SSH hardening"
 
 if [ "${is_lxc}" = true ]; then
     systemctl disable ssh.socket || true
@@ -265,8 +276,6 @@ if [ "${is_lxc}" = false ]; then
     fi
 fi
 
-log "Debug: Before sysctl configuration"
-
 # Sysctl configuration
 read -p "Modify sysctl.conf? (y/n): " modify_sysctl
 if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
@@ -280,12 +289,8 @@ if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
     rm -f /tmp/sysctl.conf
 fi
 
-log "Debug: Before final reboot prompt"
-
 log "Configuration complete. System reboot recommended."
 read -p "Reboot now? (y/n): " do_reboot
 if [[ $do_reboot =~ ^[Yy]$ ]]; then
     reboot
 fi
-
-log "Debug: Script completed"
