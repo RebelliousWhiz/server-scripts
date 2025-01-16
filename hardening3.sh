@@ -4,24 +4,24 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Color definitions
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# Color definitions (using printf for better compatibility)
+RED=$(printf '\033[0;31m')
+GREEN=$(printf '\033[0;32m')
+YELLOW=$(printf '\033[1;33m')
+NC=$(printf '\033[0m')
 
 # Helper functions
 log() {
-    echo -e "`${GREEN}[$`(date +'%Y-%m-%d %H:%M:%S')]`${NC} $`1"
+    printf "${GREEN}[%s]${NC} %s\n" "$(date +'%Y-%m-%d %H:%M:%S')" "$1"
 }
 
 error() {
-    echo -e "`${RED}[ERROR]$`{NC} $1" >&2
+    printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
     exit 1
 }
 
 warn() {
-    echo -e "`${YELLOW}[WARNING]$`{NC} $1"
+    printf "${YELLOW}[WARNING]${NC} %s\n" "$1"
 }
 
 # Check root privileges
@@ -32,6 +32,8 @@ fi
 # Detect system and environment
 is_debian=false
 is_lxc=false
+distro=""
+
 if [ -f /etc/debian_version ]; then
     is_debian=true
     if grep -qi debian /etc/os-release; then
@@ -45,31 +47,28 @@ if [ -f /proc/1/environ ] && grep -q container=lxc /proc/1/environ; then
     is_lxc=true
 fi
 
-# Comment CDROM source in Debian
-if [ "`$distro" = "debian" ] && [ "$`is_lxc" = false ]; then
-    if grep -q "^deb cdrom:" /etc/apt/sources.list; then
-        log "Commenting out CDROM source..."
-        sed -i 's/^deb cdrom:/#deb cdrom:/' /etc/apt/sources.list
-    fi
-fi
-
 # Update system and install packages
 log "Updating system and installing required packages..."
 apt-get update
 apt-get upgrade -y
 
-# Define base packages (using double quotes here)
-base_packages="curl rsyslog wget socat bash-completion wireguard vim sudo"
+# Install packages
+log "Installing required packages..."
+apt-get install -y curl
+apt-get install -y rsyslog
+apt-get install -y wget
+apt-get install -y socat
+apt-get install -y bash-completion
+apt-get install -y wireguard
+apt-get install -y vim
+apt-get install -y sudo
 
 if [ "$distro" = "debian" ] && [ "$is_lxc" = false ]; then
     read -p "Install dnsmasq? (y/n): " install_dnsmasq
     if [[ $install_dnsmasq =~ ^[Yy]$ ]]; then
-        base_packages="$base_packages dnsmasq"
+        apt-get install -y dnsmasq
     fi
 fi
-
-# Install all packages in a single command (important: no quotes around $base_packages)
-apt-get install -y $base_packages
 
 # Configure dnsmasq if installed
 if command -v dnsmasq >/dev/null 2>&1; then
