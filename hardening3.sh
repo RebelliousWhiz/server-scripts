@@ -209,6 +209,8 @@ for user in $(ls /home); do
     chown "${user}:${user}" "/home/${user}/.vimrc"
 done
 
+log "Debug: Before SSH server configuration"
+
 # SSH server configuration
 current_port=$(grep -i "^Port" /etc/ssh/sshd_config | awk '{print $2}')
 log "Current SSH port: ${current_port:-22}"
@@ -234,6 +236,8 @@ ClientAliveCountMax 10
 TCPKeepAlive no
 Compression no
 EOF
+
+log "Debug: After SSH hardening"
 
 if [ "${is_lxc}" = true ]; then
     systemctl disable ssh.socket || true
@@ -261,6 +265,8 @@ if [ "${is_lxc}" = false ]; then
     fi
 fi
 
+log "Debug: Before sysctl configuration"
+
 # Sysctl configuration
 read -p "Modify sysctl.conf? (y/n): " modify_sysctl
 if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
@@ -274,11 +280,12 @@ if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
     rm -f /tmp/sysctl.conf
 fi
 
-# Debug logging
-log "Script reached final section"
+log "Debug: Before final reboot prompt"
 
 log "Configuration complete. System reboot recommended."
 read -p "Reboot now? (y/n): " do_reboot
 if [[ $do_reboot =~ ^[Yy]$ ]]; then
     reboot
 fi
+
+log "Debug: Script completed"
