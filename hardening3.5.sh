@@ -308,18 +308,21 @@ fi'
         # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
         
-        # Create temporary file with the new PS1 configuration
-        cat > /tmp/ps1.tmp << 'EOF'
+        # Define the exact replacement block
+        cat > /tmp/ps1_block.tmp << 'EOL'
 if [ "$color_prompt" = yes ]; then
-    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
     PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
 fi
-EOF
+unset color_prompt force_color_prompt
+EOL
 
-        # Replace the existing PS1 configuration block
-        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/c\'"$(cat /tmp/ps1.tmp)" "$bashrc"
-        rm -f /tmp/ps1.tmp
+        # Replace the entire block
+        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\'"$(cat /tmp/ps1_block.tmp)" "$bashrc"
+        
+        # Clean up
+        rm -f /tmp/ps1_block.tmp
         
         log "Updated root bashrc PS1 configuration for Ubuntu"
     fi
