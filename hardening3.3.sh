@@ -603,7 +603,6 @@ main() {
     # Configure root
     configure_root_bashrc
     configure_user_environment "root"
-    configure_ssh_for_user "root"
 
     # Configure system SSH
     configure_system_ssh
