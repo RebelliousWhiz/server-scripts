@@ -154,15 +154,25 @@ read_input() {
 
 # System Detection
 detect_system() {
-    if [ -f /etc/debian_version ]; then
-        is_debian=true
-        if grep -qi debian /etc/os-release; then
-            distro="debian"
-        else
-            distro="ubuntu"
-        fi
+    if [ -f /etc/os-release ]; then
+        # Read ID from os-release file
+        distro=$(grep -E "^ID=" /etc/os-release | cut -d= -f2 | tr -d '"')
+        
+        case "$distro" in
+            "ubuntu")
+                is_debian=true
+                distro="ubuntu"
+                ;;
+            "debian")
+                is_debian=true
+                distro="debian"
+                ;;
+            *)
+                error "Unsupported distribution"
+                ;;
+        esac
     else
-        error "Unsupported distribution"
+        error "Cannot detect distribution: /etc/os-release not found"
     fi
     
     export is_debian
