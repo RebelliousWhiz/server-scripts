@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 1.0
+# Version: 3.0
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
