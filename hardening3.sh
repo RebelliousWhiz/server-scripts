@@ -274,6 +274,9 @@ if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
     rm -f /tmp/sysctl.conf
 fi
 
+# Debug logging
+log "Script reached final section"
+
 log "Configuration complete. System reboot recommended."
 read -p "Reboot now? (y/n): " do_reboot
 if [[ $do_reboot =~ ^[Yy]$ ]]; then
