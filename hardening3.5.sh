@@ -328,6 +328,32 @@ EOL
     fi
 }
 
+configure_user_security() {
+    local user=$1
+    local user_home="/home/${user}"
+    
+    # Configure .bash_logout
+    local bash_logout="${user_home}/.bash_logout"
+    if [ -f "$bash_logout" ]; then
+        backup_file "$bash_logout"
+    else
+        touch "$bash_logout"
+    fi
+    
+    # Check and add history commands if not present
+    if ! grep -q "history -c" "$bash_logout"; then
+        echo "history -c" >> "$bash_logout"
+    fi
+    if ! grep -q "history -w" "$bash_logout"; then
+        echo "history -w" >> "$bash_logout"
+    fi
+    
+    # Set ownership and permissions for .bash_logout
+    chown root:root "$bash_logout"
+    chmod 644 "$bash_logout"
+    log "Configured .bash_logout for ${user}"
+}
+
 configure_system_ssh() {
     backup_file "/etc/ssh/sshd_config"
     
