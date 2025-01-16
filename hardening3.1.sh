@@ -15,7 +15,7 @@ IFS=$'\n\t'
 
 # Configuration Variables
 readonly SCRIPT_VERSION="3.1"
-readonly PACKAGES="curl rsyslog wget socat bash-completion wireguard vim sudo"
+readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
 readonly LOG_FILE="/var/log/server_init.log"
@@ -347,9 +347,7 @@ configure_system_packages() {
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
     log "Installing required packages..."
-    # Convert space-separated string to array
-    read -ra pkg_array <<< "$PACKAGES"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${pkg_array[@]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
 }
 
 configure_user_environment() {
