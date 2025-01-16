@@ -201,7 +201,7 @@ remove_snap() {
     if ! command -v snap >/dev/null 2>&1; then
         log "Snap is not installed on this system"
         return 0
-    }
+    fi  # Changed '}' to 'fi'
 
     log "Removing Snap and preventing its reinstallation..."
     
@@ -239,7 +239,7 @@ remove_snap() {
 
     # Prevent snapd from being installed again
     log "Blocking snap from future installation..."
-    cat > /etc/apt/preferences.d/nosnap.pref << 'EOF'
+    cat > /etc/apt/preferences.d/nosnap.pref << EOF
 Package: snapd
 Pin: release a=*
 Pin-Priority: -1
