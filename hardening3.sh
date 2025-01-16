@@ -133,8 +133,10 @@ if [ "${distro}" = "debian" ]; then
         select user in $(ls /home); do
             if [ -n "${user}" ]; then
                 usermod -aG sudo "${user}"
-                log "Added ${user} to sudo group"
-                # Store the username for later use
+                # Create sudo configuration for passwordless sudo initially
+                echo "${user} ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/init-${user}"
+                chmod 440 "/etc/sudoers.d/init-${user}"
+                log "Added ${user} to sudo group with initial passwordless access"
                 selected_sudo_user="${user}"
                 break
             fi
@@ -150,19 +152,20 @@ done
 # Lock root account on Debian
 if [ "${distro}" = "debian" ]; then
     if [ -n "${selected_sudo_user:-}" ]; then
-        log "Sudo group changes have been made."
-        warn "Please verify sudo access manually after script completion by running: su - ${selected_sudo_user} -c 'sudo whoami'"
-        warn "Root account will not be locked until sudo access is verified."
-    elif [ -n "$(getent group sudo | cut -d: -f4)" ]; then
-        # If there was already a sudo user
-        current_sudo_user=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
-        log "Found existing sudo user: ${current_sudo_user}"
-        if [ -x "$(command -v sudo)" ] && sudo -l -U "${current_sudo_user}" >/dev/null 2>&1; then
+        log "Testing sudo access..."
+        if su - "${selected_sudo_user}" -c "sudo whoami" >/dev/null 2>&1; then
+            log "Sudo access confirmed for ${selected_sudo_user}"
+            # Remove passwordless sudo and require password
+            rm -f "/etc/sudoers.d/init-${selected_sudo_user}"
             passwd -l root
             log "Root account locked"
+            warn "Note: Sudo access now requires password. Please set a password for ${selected_sudo_user} if not already set."
         else
-            warn "Could not verify sudo access. Root account will not be locked."
+            error "Failed to verify sudo access. Please check configuration manually."
         fi
+    elif [ -n "$(getent group sudo | cut -d: -f4)" ]; then
+        current_sudo_user=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
+        log "Found existing sudo user: ${current_sudo_user}"
     fi
 fi
 
