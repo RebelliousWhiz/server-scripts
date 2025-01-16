@@ -287,9 +287,9 @@ configure_root_bashrc() {
     backup_file "$bashrc"
 
     if [ "${distro}" = "debian" ]; then
-        # Debian specific configuration remains the same
+        # Debian specific configuration
         local debian_config='force_color_prompt=yes
-PS1='\''\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''
+PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
 alias ls='"'"'ls --color=auto'"'"'
 if ! shopt -oq posix; then
   if [ -f /usr/share/bash-completion/bash_completion ]; then
@@ -311,8 +311,7 @@ fi'
         # Check if the old PS1 configuration exists and needs to be updated
         if grep -q '^\s*PS1=.*\\\[\\033\[01;32m\\\]\\u@\\h' "$bashrc"; then
             # Replace the existing PS1 configuration with the new one
-            sed -i 's/\\u@\\h/\\u\\[\\033[01;32m\\]@\\h/g' "$bashrc"
-            sed -i 's/\[\\033\[01;32m\]/[\\033[01;31m]/' "$bashrc"
+            sed -i 's/PS1=.*$/PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'/' "$bashrc"
             log "Updated root bashrc PS1 configuration for Ubuntu"
         fi
     fi
