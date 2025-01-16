@@ -379,7 +379,22 @@ TCPKeepAlive no
 Compression no
 EOF
 
-    systemctl reload ssh
+    # Handle SSH service based on distribution and environment
+    if [ "${distro}" = "debian" ]; then
+        if [ "${is_lxc}" = true ]; then
+            log "Debian LXC detected: Configuring SSH services..."
+            systemctl disable ssh.socket
+            systemctl stop ssh.socket
+            systemctl enable ssh.service
+            systemctl start ssh.service
+        elif [ "${is_lxc}" = false ]; then
+            log "Debian standard system detected: Reloading SSH..."
+            systemctl reload ssh
+        fi
+    else
+        # For Ubuntu (both LXC and standard), no reload needed
+        log "Ubuntu detected: SSH configuration updated, no service reload required"
+    fi
 }
 
 configure_system_packages() {
