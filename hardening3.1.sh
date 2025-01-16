@@ -136,19 +136,6 @@ detect_environment() {
     log "Environment detection: LXC=$is_lxc, Container=$is_container"
 }
 
-# Progress Indicator
-show_progress() {
-    local pid=$1
-    local message=${2:-"Processing"}
-    local i=0
-    local sp='/-\|'
-    while kill -0 "$pid" 2>/dev/null; do
-        printf "\r${message} %s " "${sp:i++%${#sp}:1}"
-        sleep 0.1
-    done
-    printf "\r${message} Complete!\n"
-}
-
 # User Input with Timeout
 read_input() {
     local prompt="$1"
@@ -163,14 +150,6 @@ read_input() {
     else
         echo "$result"
     fi
-}
-
-# Package Installation with Progress
-install_packages() {
-    local packages="$1"
-    log "Installing packages: $packages"
-    (DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $packages) &
-    show_progress $! "Installing packages"
 }
 
 # System Detection
@@ -347,7 +326,7 @@ configure_system_packages() {
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
     log "Installing required packages..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGES[@]}"
 }
 
 configure_user_environment() {
@@ -389,7 +368,7 @@ configure_system_parameters() {
         if [[ $config_ntp =~ ^[Yy]$ ]]; then
             systemctl stop systemd-timesyncd ntp chronyd 2>/dev/null || true
             systemctl disable systemd-timesyncd ntp chronyd 2>/dev/null || true
-            install_packages "ntpdate"
+            apt-get install -y ntpdate
             ntpdate -4 time.nist.gov
             (crontab -l 2>/dev/null; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
         fi
