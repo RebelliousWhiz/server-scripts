@@ -347,7 +347,9 @@ configure_system_packages() {
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
     log "Installing required packages..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES
+    # Convert space-separated string to array
+    read -ra pkg_array <<< "$PACKAGES"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${pkg_array[@]}"
 }
 
 configure_user_environment() {
