@@ -306,13 +306,9 @@ fi'
     elif [ "${distro}" = "ubuntu" ]; then
         # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
-
-        # Check if the old PS1 configuration exists and needs to be updated
-        if grep -q '^\s*PS1=.*\\\[\\033\[01;32m\\\]\\u@\\h' "$bashrc"; then
-            # Replace the existing PS1 configuration with the new one
-            sed -i 's/PS1=.*$/PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'/' "$bashrc"
-            log "Updated root bashrc PS1 configuration for Ubuntu"
-        fi
+        # Simply append the PS1 configuration at the end
+        echo 'PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'' >> "$bashrc"
+        log "Added root PS1 configuration to bashrc for Ubuntu"
     fi
 }
 
