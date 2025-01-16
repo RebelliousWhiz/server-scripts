@@ -475,46 +475,31 @@ configure_system_parameters() {
         if ! wget -q "$SYSCTL_URL" -O /tmp/sysctl.conf; then
             error "Failed to download sysctl configuration"
         fi
+
+        # Load necessary modules
+        log "Loading required kernel modules..."
+        modprobe nf_conntrack >/dev/null 2>&1 || true
         
-        if [ "${is_lxc}" = true ]; then
-            log "Filtering sysctl parameters for LXC environment..."
-            touch /tmp/sysctl_lxc.conf
-            
-            while IFS= read -r line || [ -n "$line" ]; do
-                [[ "$line" =~ ^[[:space:]]*# ]] && continue
-                [[ -z "${line// }" ]] && continue
-                
-                local param=$(echo "$line" | cut -d= -f1 | tr -d ' ')
-                local value=$(echo "$line" | cut -d= -f2- | tr -d ' ')
-                
-                [[ "$param" =~ ^kernel\. ]] && continue
-                [[ "$param" =~ ^fs\. ]] && continue
-                
-                if sysctl -q "$param" >/dev/null 2>&1; then
-                    if sysctl -w "$param=$value" >/dev/null 2>&1; then
-                        echo "$line" >> /tmp/sysctl_lxc.conf
-                        log "Parameter available and writable: $param"
-                    else
-                        warn "Parameter exists but not writable: $param"
-                    fi
-                else
-                    warn "Skipping unavailable parameter: $param"
-                fi
-            done < /tmp/sysctl.conf
-            
-            if [ -s /tmp/sysctl_lxc.conf ]; then
-                mv /tmp/sysctl_lxc.conf /etc/sysctl.conf
-                log "Applying working sysctl parameters..."
-                sysctl -p /etc/sysctl.conf 2>/dev/null || true
-            else
-                warn "No applicable sysctl parameters found for LXC environment"
+        if [ "${is_lxc}" = false ]; then
+            # Add modules to /etc/modules for persistence
+            if ! grep -q "^nf_conntrack" /etc/modules; then
+                echo "nf_conntrack" >> /etc/modules
             fi
-        else
-            cp /tmp/sysctl.conf /etc/sysctl.conf
-            sysctl -p
+            
+            # Create directory if it doesn't exist
+            mkdir -p /etc/modules-load.d
+            
+            # Add module configuration
+            echo "nf_conntrack" > /etc/modules-load.d/nf_conntrack.conf
         fi
+
+        cp /tmp/sysctl.conf /etc/sysctl.conf
         
-        rm -f /tmp/sysctl.conf /tmp/sysctl_lxc.conf
+        # Apply sysctl parameters, ignoring errors
+        log "Applying sysctl parameters..."
+        sysctl -p 2>/dev/null || true
+        
+        rm -f /tmp/sysctl.conf
     fi
 }
 
