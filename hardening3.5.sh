@@ -287,7 +287,7 @@ configure_root_bashrc() {
     backup_file "$bashrc"
 
     if [ "${distro}" = "debian" ]; then
-        # Debian specific configuration
+        # Debian specific configuration remains the same
         local debian_config='force_color_prompt=yes
 PS1='\''\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''
 alias ls='"'"'ls --color=auto'"'"'
@@ -307,28 +307,14 @@ fi'
     elif [ "${distro}" = "ubuntu" ]; then
         # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
-        
-        # Create a marker for the block we want to replace
-        local start_line="if [ \"\$color_prompt\" = yes ]; then"
-        local end_line="unset color_prompt force_color_prompt"
-        
-        # Use awk to replace the block
-        awk -v start="$start_line" -v end="$end_line" '
-        BEGIN {
-            print "if [ \"$color_prompt\" = yes ]; then"
-            print "    PS1='\''\${debian_chroot:+(\$debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''"
-            print "else"
-            print "    PS1='\''\${debian_chroot:+(\$debian_chroot)}\u@\h:\w\$ '\''"
-            print "fi"
-            print "unset color_prompt force_color_prompt"
-            next_line = 1
-        }
-        $0 ~ start { next_line = 0 }
-        next_line { print }
-        $0 ~ end { next_line = 1 }
-        ' "$bashrc" > "${bashrc}.tmp" && mv "${bashrc}.tmp" "$bashrc"
-        
-        log "Updated root bashrc PS1 configuration for Ubuntu"
+
+        # Check if the old PS1 configuration exists and needs to be updated
+        if grep -q '^\s*PS1=.*\\\[\\033\[01;32m\\\]\\u@\\h' "$bashrc"; then
+            # Replace the existing PS1 configuration with the new one
+            sed -i 's/\\u@\\h/\\u\\[\\033[01;32m\\]@\\h/g' "$bashrc"
+            sed -i 's/\[\\033\[01;32m\]/[\\033[01;31m]/' "$bashrc"
+            log "Updated root bashrc PS1 configuration for Ubuntu"
+        fi
     fi
 }
 
