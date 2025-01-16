@@ -133,8 +133,9 @@ if [ "${distro}" = "debian" ]; then
         select user in $(ls /home); do
             if [ -n "${user}" ]; then
                 usermod -aG sudo "${user}"
-                # Force group update without requiring logout
-                su - "${user}" -c "newgrp sudo" || true
+                log "Added ${user} to sudo group"
+                # Store the username for later use
+                selected_sudo_user="${user}"
                 break
             fi
         done
@@ -148,16 +149,19 @@ done
 
 # Lock root account on Debian
 if [ "${distro}" = "debian" ]; then
-    sudo_user=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
-    if [ -n "${sudo_user}" ]; then
-        log "Testing sudo access for ${sudo_user}..."
-        # Give the system a moment to process group changes
-        sleep 2
-        if su - "${sudo_user}" -c "groups | grep -q sudo && sudo true" >/dev/null 2>&1; then
+    if [ -n "${selected_sudo_user:-}" ]; then
+        log "Sudo group changes have been made."
+        warn "Please verify sudo access manually after script completion by running: su - ${selected_sudo_user} -c 'sudo whoami'"
+        warn "Root account will not be locked until sudo access is verified."
+    elif [ -n "$(getent group sudo | cut -d: -f4)" ]; then
+        # If there was already a sudo user
+        current_sudo_user=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
+        log "Found existing sudo user: ${current_sudo_user}"
+        if [ -x "$(command -v sudo)" ] && sudo -l -U "${current_sudo_user}" >/dev/null 2>&1; then
             passwd -l root
             log "Root account locked"
         else
-            warn "Sudo test failed. Root account will not be locked. Please verify sudo access manually after script completion."
+            warn "Could not verify sudo access. Root account will not be locked."
         fi
     fi
 fi
