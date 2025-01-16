@@ -396,10 +396,13 @@ configure_system_packages() {
 
 configure_user_environment() {
     local user=$1
-    local user_home="/home/${user}"
-    # Explicitly check if it's root user and set correct path
+    local user_home
+
+    # Set correct home directory based on user
     if [ "$user" = "root" ]; then
         user_home="/root"
+    else
+        user_home="/home/${user}"
     fi
 
     # Configure bash
@@ -594,22 +597,18 @@ main() {
     configure_root_bashrc
     configure_user_environment "root"
 
-    # Configure SSH for all users
+    # Configure users in /home/
     for user in $(ls /home); do
         configure_ssh_for_user "${user}"
         configure_user_environment "${user}"
-    done
-
-    # Configure root separately
-    configure_user_environment "root"
-    
-    # Security Settings
-    for user in $(ls /home); do
         configure_user_security "${user}"
     done
 
-    # Configure system SSH
+    # Configure root
+    configure_user_environment "root"
     configure_ssh_for_user "root"
+
+    # Configure system SSH
     configure_system_ssh
 
     # Configure system parameters
