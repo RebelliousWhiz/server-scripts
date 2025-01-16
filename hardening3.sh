@@ -279,14 +279,48 @@ fi
 # Sysctl configuration
 read -p "Modify sysctl.conf? (y/n): " modify_sysctl
 if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
+    log "Downloading sysctl configuration..."
     wget -q https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl.conf -O /tmp/sysctl.conf
+    
     if [ "${is_lxc}" = true ]; then
-        grep -v "kernel.printk\|fs.file-max\|net.ipv4.ip_forward" /tmp/sysctl.conf > /etc/sysctl.conf
+        log "Filtering sysctl parameters for LXC environment..."
+        # Create a temporary file for working parameters
+        touch /tmp/sysctl_lxc.conf
+        
+        # Read each line from the downloaded config
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments and empty lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            
+            # Extract parameter name
+            param=$(echo "$line" | cut -d= -f1 | tr -d ' ')
+            
+            # Test if parameter exists and can be set
+            if sysctl -q "$param" >/dev/null 2>&1; then
+                echo "$line" >> /tmp/sysctl_lxc.conf
+                log "Parameter available: $param"
+            else
+                warn "Skipping unavailable parameter: $param"
+            fi
+        done < /tmp/sysctl.conf
+        
+        # If we found any working parameters, apply them
+        if [ -s /tmp/sysctl_lxc.conf ]; then
+            mv /tmp/sysctl_lxc.conf /etc/sysctl.conf
+            log "Applying working sysctl parameters..."
+            sysctl -p /etc/sysctl.conf
+        else
+            warn "No applicable sysctl parameters found for LXC environment"
+        fi
     else
+        # Non-LXC environment, use all parameters
         cp /tmp/sysctl.conf /etc/sysctl.conf
+        sysctl -p
     fi
-    sysctl -p
-    rm -f /tmp/sysctl.conf
+    
+    # Cleanup
+    rm -f /tmp/sysctl.conf /tmp/sysctl_lxc.conf
 fi
 
 log "Configuration complete. System reboot recommended."
