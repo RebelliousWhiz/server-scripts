@@ -256,22 +256,21 @@ configure_ssh_for_user() {
     mkdir -p "${ssh_dir}"
     touch "${auth_keys}"
 
-    if groups "${user}" | grep -q "\bsudo\b"; then
-        if [ ! -s "${auth_keys}" ]; then
-            log "No SSH key found for ${user}. Adding new key..."
-            local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+    # Always prompt for SSH key for new users
+    if [ ! -s "${auth_keys}" ]; then
+        log "No SSH key found for ${user}. Adding new key..."
+        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+        if [ -n "$ssh_key" ]; then
+            validate_ssh_key "$ssh_key" && echo "${ssh_key}" > "${auth_keys}"
+        fi
+    else
+        log "Existing SSH keys for ${user}:"
+        cat "${auth_keys}"
+        local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
+        if [[ $replace_keys =~ ^[Yy]$ ]]; then
+            local ssh_key=$(read_input "Enter new SSH public key: " "")
             if [ -n "$ssh_key" ]; then
                 validate_ssh_key "$ssh_key" && echo "${ssh_key}" > "${auth_keys}"
-            fi
-        else
-            log "Existing SSH keys for ${user}:"
-            cat "${auth_keys}"
-            local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
-            if [[ $replace_keys =~ ^[Yy]$ ]]; then
-                local ssh_key=$(read_input "Enter new SSH public key: " "")
-                if [ -n "$ssh_key" ]; then
-                    validate_ssh_key "$ssh_key" && echo "${ssh_key}" > "${auth_keys}"
-                fi
             fi
         fi
     fi
@@ -524,21 +523,19 @@ configure_system_parameters() {
 }
 
 configure_sudo_access() {
-    if [ "${distro}" = "debian" ]; then
-        local sudo_users=$(getent group sudo | cut -d: -f4)
-        if [ -z "${sudo_users}" ]; then
-            log "No users in sudo group. Select user to add:"
-            select user in $(ls /home); do
-                if [ -n "${user}" ]; then
-                    usermod -aG sudo "${user}"
-                    echo "${user} ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/init-${user}"
-                    chmod 440 "/etc/sudoers.d/init-${user}"
-                    log "Added ${user} to sudo group with initial passwordless access"
-                    selected_sudo_user="${user}"
-                    break
-                fi
-            done
-        fi
+    local sudo_users=$(getent group sudo | cut -d: -f4)
+    if [ -z "${sudo_users}" ]; then
+        log "No users in sudo group. Select user to add:"
+        select user in $(ls /home); do
+            if [ -n "${user}" ]; then
+                usermod -aG sudo "${user}"
+                echo "${user} ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/init-${user}"
+                chmod 440 "/etc/sudoers.d/init-${user}"
+                log "Added ${user} to sudo group with initial passwordless access"
+                selected_sudo_user="${user}"
+                break
+            fi
+        done
     fi
 }
 
