@@ -201,7 +201,7 @@ remove_snap() {
     if ! command -v snap >/dev/null 2>&1; then
         log "Snap is not installed on this system"
         return 0
-    fi  # Changed '}' to 'fi'
+    fi
 
     log "Removing Snap and preventing its reinstallation..."
     
