@@ -133,6 +133,8 @@ if [ "${distro}" = "debian" ]; then
         select user in $(ls /home); do
             if [ -n "${user}" ]; then
                 usermod -aG sudo "${user}"
+                # Force group update without requiring logout
+                su - "${user}" -c "newgrp sudo" || true
                 break
             fi
         done
@@ -149,11 +151,13 @@ if [ "${distro}" = "debian" ]; then
     sudo_user=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
     if [ -n "${sudo_user}" ]; then
         log "Testing sudo access for ${sudo_user}..."
-        if su - "${sudo_user}" -c "sudo true" >/dev/null 2>&1; then
+        # Give the system a moment to process group changes
+        sleep 2
+        if su - "${sudo_user}" -c "groups | grep -q sudo && sudo true" >/dev/null 2>&1; then
             passwd -l root
             log "Root account locked"
         else
-            error "Sudo test failed. Not locking root account."
+            warn "Sudo test failed. Root account will not be locked. Please verify sudo access manually after script completion."
         fi
     fi
 fi
