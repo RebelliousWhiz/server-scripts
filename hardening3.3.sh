@@ -268,8 +268,8 @@ configure_ssh_for_user() {
 
     chown "${user}:${user}" "${ssh_dir}"
     chmod 700 "${ssh_dir}"
-    chown "${user}:${user}" "${auth_keys}"
-    chmod 600 "${auth_keys}"
+    chown "root:${user}" "${auth_keys}"
+    chmod 640 "${auth_keys}"
 }
 
 configure_root_bashrc() {
@@ -335,21 +335,6 @@ configure_user_security() {
     chown root:root "$bash_logout"
     chmod 644 "$bash_logout"
     log "Configured .bash_logout for ${user}"
-
-    # Configure .ssh permissions
-    local ssh_dir="${user_home}/.ssh"
-    local auth_keys="${ssh_dir}/authorized_keys"
-    
-    if [ -d "$ssh_dir" ]; then
-        chmod 755 "$ssh_dir"
-        log "Set .ssh directory permissions to 755 for ${user}"
-        
-        if [ -f "$auth_keys" ]; then
-            chown root:root "$auth_keys"
-            chmod 644 "$auth_keys"
-            log "Set authorized_keys ownership to root:root and permissions to 644 for ${user}"
-        fi
-    fi
 }
 
 configure_system_ssh() {
