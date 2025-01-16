@@ -340,14 +340,14 @@ EOF
 
 configure_system_packages() {
     log "Updating package lists..."
-    apt-get update &
-    show_progress $! "Updating package lists"
+    apt-get update >/dev/null 2>&1
 
     log "Upgrading existing packages..."
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y &
-    show_progress $! "Upgrading packages"
+    # Run upgrade without background process to avoid hanging
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-    install_packages "$PACKAGES"
+    log "Installing required packages..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES
 }
 
 configure_user_environment() {
