@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 3.3
+# Version: 3.4
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="3.3"
+readonly SCRIPT_VERSION="3.4"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -522,9 +522,23 @@ configure_sudo_access() {
 }
 
 display_summary() {
+    # Capitalize distribution name
+    local display_distro
+    case "${distro}" in
+        "debian")
+            display_distro="Debian"
+            ;;
+        "ubuntu")
+            display_distro="Ubuntu"
+            ;;
+        *)
+            display_distro="${distro^}"  # Capitalize first letter as fallback
+            ;;
+    esac
+
     log "Configuration Summary:"
     echo "  • System Information:"
-    echo "    - Distribution: ${distro}"
+    echo "    - Distribution: ${display_distro}"
     echo "    - Environment: $([ "$is_lxc" = true ] && echo "LXC Container" || echo "Standard System")"
     echo
     echo "  • Security Changes:"
