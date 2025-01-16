@@ -593,10 +593,6 @@ main() {
     # Configure sudo access
     configure_sudo_access
 
-    # Configure root environment
-    configure_root_bashrc
-    configure_user_environment "root"
-
     # Configure users in /home/
     for user in $(ls /home); do
         configure_ssh_for_user "${user}"
@@ -605,6 +601,7 @@ main() {
     done
 
     # Configure root
+    configure_root_bashrc
     configure_user_environment "root"
     configure_ssh_for_user "root"
 
