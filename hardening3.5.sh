@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 3.4
+# Version: 3.5
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="3.4"
+readonly SCRIPT_VERSION="3.5"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -305,19 +305,18 @@ fi'
             log "Added color prompt and bash completion to root bashrc"
         fi
     elif [ "${distro}" = "ubuntu" ]; then
-        # Ubuntu specific configuration remains the same
+        # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
         
-        # Replace PS1
-        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^unset color_prompt force_color_prompt$/c\
-if [ "$color_prompt" = yes ]; then\
-    PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'\
-else\
-    PS1='"'"'${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '"'"'\
-fi\
-unset color_prompt force_color_prompt' "$bashrc"
+        # Replace PS1 configuration
+        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/{
+            /^if \[ "\$color_prompt" = yes \]; then/b
+            /^fi/b
+            /PS1=/c\    PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
+            /else/c\else
+        }' "$bashrc"
         
-        log "Updated root bashrc PS1 configuration"
+        log "Updated root bashrc PS1 configuration for Ubuntu"
     fi
 }
 
