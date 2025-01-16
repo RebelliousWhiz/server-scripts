@@ -58,18 +58,18 @@ log "Updating system and installing required packages..."
 apt-get update
 apt-get upgrade -y
 
-# Define base packages
-packages="curl rsyslog wget socat bash-completion wireguard vim sudo"
+# Define base packages (using double quotes here)
+base_packages="curl rsyslog wget socat bash-completion wireguard vim sudo"
 
 if [ "$distro" = "debian" ] && [ "$is_lxc" = false ]; then
     read -p "Install dnsmasq? (y/n): " install_dnsmasq
     if [[ $install_dnsmasq =~ ^[Yy]$ ]]; then
-        packages="$packages dnsmasq"
+        base_packages="$base_packages dnsmasq"
     fi
 fi
 
-# Install all packages in a single command
-apt-get install -y $packages
+# Install all packages in a single command (important: no quotes around $base_packages)
+apt-get install -y $base_packages
 
 # Configure dnsmasq if installed
 if command -v dnsmasq >/dev/null 2>&1; then
