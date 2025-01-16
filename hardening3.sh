@@ -284,22 +284,30 @@ if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
     
     if [ "${is_lxc}" = true ]; then
         log "Filtering sysctl parameters for LXC environment..."
-        # Create a temporary file for working parameters
         touch /tmp/sysctl_lxc.conf
         
-        # Read each line from the downloaded config
         while IFS= read -r line || [ -n "$line" ]; do
             # Skip comments and empty lines
             [[ "$line" =~ ^[[:space:]]*# ]] && continue
             [[ -z "${line// }" ]] && continue
             
-            # Extract parameter name
+            # Extract parameter name and value
             param=$(echo "$line" | cut -d= -f1 | tr -d ' ')
+            value=$(echo "$line" | cut -d= -f2- | tr -d ' ')
+            
+            # Skip kernel and fs parameters in LXC
+            [[ "$param" =~ ^kernel\. ]] && continue
+            [[ "$param" =~ ^fs\. ]] && continue
             
             # Test if parameter exists and can be set
             if sysctl -q "$param" >/dev/null 2>&1; then
-                echo "$line" >> /tmp/sysctl_lxc.conf
-                log "Parameter available: $param"
+                # Try to set the parameter to test write access
+                if sysctl -w "$param=$value" >/dev/null 2>&1; then
+                    echo "$line" >> /tmp/sysctl_lxc.conf
+                    log "Parameter available and writable: $param"
+                else
+                    warn "Parameter exists but not writable: $param"
+                fi
             else
                 warn "Skipping unavailable parameter: $param"
             fi
@@ -309,7 +317,7 @@ if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
         if [ -s /tmp/sysctl_lxc.conf ]; then
             mv /tmp/sysctl_lxc.conf /etc/sysctl.conf
             log "Applying working sysctl parameters..."
-            sysctl -p /etc/sysctl.conf
+            sysctl -p /etc/sysctl.conf 2>/dev/null || true
         else
             warn "No applicable sysctl parameters found for LXC environment"
         fi
