@@ -311,6 +311,47 @@ unset color_prompt force_color_prompt' "$bashrc"
     fi
 }
 
+configure_user_security() {
+    local user=$1
+    local user_home="/home/${user}"
+    
+    # Configure .bash_logout
+    local bash_logout="${user_home}/.bash_logout"
+    if [ -f "$bash_logout" ]; then
+        backup_file "$bash_logout"
+    else
+        touch "$bash_logout"
+    fi
+    
+    # Check and add history commands if not present
+    if ! grep -q "history -c" "$bash_logout"; then
+        echo "history -c" >> "$bash_logout"
+    fi
+    if ! grep -q "history -w" "$bash_logout"; then
+        echo "history -w" >> "$bash_logout"
+    fi
+    
+    # Set ownership and permissions for .bash_logout
+    chown root:root "$bash_logout"
+    chmod 644 "$bash_logout"
+    log "Configured .bash_logout for ${user}"
+
+    # Configure .ssh permissions
+    local ssh_dir="${user_home}/.ssh"
+    local auth_keys="${ssh_dir}/authorized_keys"
+    
+    if [ -d "$ssh_dir" ]; then
+        chmod 755 "$ssh_dir"
+        log "Set .ssh directory permissions to 755 for ${user}"
+        
+        if [ -f "$auth_keys" ]; then
+            chown root:root "$auth_keys"
+            chmod 644 "$auth_keys"
+            log "Set authorized_keys ownership to root:root and permissions to 644 for ${user}"
+        fi
+    fi
+}
+
 configure_system_ssh() {
     backup_file "/etc/ssh/sshd_config"
     
@@ -569,6 +610,11 @@ main() {
     for user in $(ls /home); do
         configure_ssh_for_user "${user}"
         configure_user_environment "${user}"
+    done
+
+    # Security Settings
+    for user in $(ls /home); do
+        configure_user_security "${user}"
     done
 
     # Configure system SSH
