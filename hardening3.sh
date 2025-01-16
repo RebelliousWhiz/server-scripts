@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Server Initialization and Hardening Script
+# Version: 1.0
+# Description: Initializes and hardens Debian/Ubuntu systems
+# Supports: Debian 12, Ubuntu 22.04, and their derivatives
+# Environment: Bare metal, VM, and LXC containers
+# Author: RebelliousWhiz
+# License: GLP 3.0
+# In memory of Yunfei Shan, a good man, a good friend.
+
 # Initialize script with strict error checking
 set -euo pipefail
 IFS=$'\n\t'
@@ -220,7 +229,6 @@ if [[ ! "$current_port" =~ ^[0-9]+$ ]]; then
 fi
 
 read -p "Change SSH port? (y/n): " change_port
-log "Debug: After SSH port prompt"
 
 if [[ $change_port =~ ^[Yy]$ ]]; then
     read -p "Enter new SSH port: " new_port
@@ -335,4 +343,37 @@ log "Configuration complete. System reboot recommended."
 read -p "Reboot now? (y/n): " do_reboot
 if [[ $do_reboot =~ ^[Yy]$ ]]; then
     reboot
+fi
+
+# Final configuration and reboot prompt
+log "Configuration complete! 🎉"
+log "Summary of changes:"
+echo "  • System packages updated and secured"
+echo "  • SSH hardened and configured"
+echo "  • User permissions and sudo access configured"
+echo "  • System parameters optimized"
+echo "  • Security measures implemented"
+
+if [ "${is_lxc}" = true ]; then
+    echo "  • LXC-specific optimizations applied"
+fi
+
+echo
+log "Next steps:"
+echo "  1. Review the changes made"
+echo "  2. Test SSH access with the configured key"
+echo "  3. Verify sudo access for the configured user"
+if [ "${is_lxc}" = false ]; then
+    echo "  4. Check system performance after reboot"
+fi
+
+echo
+read -p "Would you like to reboot now to apply all changes? (y/n): " do_reboot
+if [[ $do_reboot =~ ^[Yy]$ ]]; then
+    log "Initiating system reboot..."
+    sleep 2
+    reboot
+else
+    log "Please remember to reboot your system at your convenience."
+    echo "Thank you for using the server initialization script! 🚀"
 fi
