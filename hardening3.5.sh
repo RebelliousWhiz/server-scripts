@@ -289,7 +289,7 @@ configure_root_bashrc() {
     if [ "${distro}" = "debian" ]; then
         # Debian specific configuration
         local debian_config='force_color_prompt=yes
-PS1='"'"'\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
+PS1='\''\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''
 alias ls='"'"'ls --color=auto'"'"'
 if ! shopt -oq posix; then
   if [ -f /usr/share/bash-completion/bash_completion ]; then
@@ -308,42 +308,105 @@ fi'
         # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
         
-        # Replace PS1 configuration
-        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/{
-            /^if \[ "\$color_prompt" = yes \]; then/b
-            /^fi/b
-            /PS1=/c\    PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
-            /else/c\else
-        }' "$bashrc"
+        # Create temporary file with the new PS1 configuration
+        cat > /tmp/ps1.tmp << 'EOF'
+if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+else
+    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+fi
+EOF
+
+        # Replace the existing PS1 configuration block
+        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/c\'"$(cat /tmp/ps1.tmp)" "$bashrc"
+        rm -f /tmp/ps1.tmp
+        
+        log "Updated root bashrc PS1 configuration for Ubuntu"
+    fi
+}configure_root_bashrc() {
+    local bashrc="/root/.bashrc"
+    backup_file "$bashrc"
+
+    if [ "${distro}" = "debian" ]; then
+        # Debian specific configuration
+        local debian_config='force_color_prompt=yes
+PS1='\''\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''
+alias ls='"'"'ls --color=auto'"'"'
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi'
+
+        # Check if configurations exist and append if they don't
+        if ! grep -q "force_color_prompt=yes" "$bashrc"; then
+            echo "$debian_config" >> "$bashrc"
+            log "Added color prompt and bash completion to root bashrc"
+        fi
+    elif [ "${distro}" = "ubuntu" ]; then
+        # Ubuntu specific configuration
+        sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
+        
+        # Create temporary file with the new PS1 configuration
+        cat > /tmp/ps1.tmp << 'EOF'
+if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+else
+    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+fi
+EOF
+
+        # Replace the existing PS1 configuration block
+        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/c\'"$(cat /tmp/ps1.tmp)" "$bashrc"
+        rm -f /tmp/ps1.tmp
         
         log "Updated root bashrc PS1 configuration for Ubuntu"
     fi
 }
 
-configure_user_security() {
-    local user=$1
-    local user_home="/home/${user}"
-    
-    # Configure .bash_logout
-    local bash_logout="${user_home}/.bash_logout"
-    if [ -f "$bash_logout" ]; then
-        backup_file "$bash_logout"
-    else
-        touch "$bash_logout"
+configure_root_bashrc() {
+    local bashrc="/root/.bashrc"
+    backup_file "$bashrc"
+
+    if [ "${distro}" = "debian" ]; then
+        # Debian specific configuration
+        local debian_config='force_color_prompt=yes
+PS1='\''\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '\''
+alias ls='"'"'ls --color=auto'"'"'
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi'
+
+        # Check if configurations exist and append if they don't
+        if ! grep -q "force_color_prompt=yes" "$bashrc"; then
+            echo "$debian_config" >> "$bashrc"
+            log "Added color prompt and bash completion to root bashrc"
+        fi
+    elif [ "${distro}" = "ubuntu" ]; then
+        # Ubuntu specific configuration
+        sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
+        
+        # Create temporary file with the new PS1 configuration
+        cat > /tmp/ps1.tmp << 'EOF'
+if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+else
+    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+fi
+EOF
+
+        # Replace the existing PS1 configuration block
+        sed -i '/^if \[ "\$color_prompt" = yes \]; then/,/^fi/c\'"$(cat /tmp/ps1.tmp)" "$bashrc"
+        rm -f /tmp/ps1.tmp
+        
+        log "Updated root bashrc PS1 configuration for Ubuntu"
     fi
-    
-    # Check and add history commands if not present
-    if ! grep -q "history -c" "$bash_logout"; then
-        echo "history -c" >> "$bash_logout"
-    fi
-    if ! grep -q "history -w" "$bash_logout"; then
-        echo "history -w" >> "$bash_logout"
-    fi
-    
-    # Set ownership and permissions for .bash_logout
-    chown root:root "$bash_logout"
-    chmod 644 "$bash_logout"
-    log "Configured .bash_logout for ${user}"
 }
 
 configure_system_ssh() {
