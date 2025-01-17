@@ -781,7 +781,7 @@ main() {
 
     # Configure users in /home/
     for user in $(ls /home); do
-        configure_ssh_for_user "${user}"
+        configure_user_ssh "${user}"
         configure_user_environment "${user}"
         configure_user_security "${user}"
     done
