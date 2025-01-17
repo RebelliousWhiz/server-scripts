@@ -249,38 +249,122 @@ EOF
     return 0
 }
 
-configure_ssh_for_user() {
-    local user=$1
-    local user_home="/home/${user}"
-    local ssh_dir="${user_home}/.ssh"
-    local auth_keys="${ssh_dir}/authorized_keys"
+configure_user_ssh() {
+    local total_users=$(ls -1 /home | wc -l)
+    local primary_user=""
 
-    mkdir -p "${ssh_dir}"
-    touch "${auth_keys}"
-
-    # Always prompt for SSH key for new users
-    if [ ! -s "${auth_keys}" ]; then
-        log "No SSH key found for ${user}. Adding new key..."
-        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
-        if [ -n "$ssh_key" ]; then
-            validate_ssh_key "$ssh_key" && echo "${ssh_key}" > "${auth_keys}"
-        fi
-    else
-        log "Existing SSH keys for ${user}:"
-        cat "${auth_keys}"
-        local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
-        if [[ $replace_keys =~ ^[Yy]$ ]]; then
-            local ssh_key=$(read_input "Enter new SSH public key: " "")
-            if [ -n "$ssh_key" ]; then
-                validate_ssh_key "$ssh_key" && echo "${ssh_key}" > "${auth_keys}"
+    # Handle multiple users case
+    if [ $total_users -gt 1 ]; then
+        log "Multiple users detected. Select user to configure SSH key first:"
+        select user in $(ls /home); do
+            if [ -n "$user" ]; then
+                primary_user="$user"
+                log "Selected ${user} for primary SSH key configuration"
+                break
             fi
-        fi
+        done
     fi
 
-    chown "${user}:${user}" "${ssh_dir}"
-    chmod 700 "${ssh_dir}"
-    chown "root:${user}" "${auth_keys}"
-    chmod 640 "${auth_keys}"
+    # Configure SSH for each user
+    for user in $(ls /home); do
+        local user_home="/home/${user}"
+        local ssh_dir="${user_home}/.ssh"
+        local auth_keys="${ssh_dir}/authorized_keys"
+
+        mkdir -p "${ssh_dir}"
+        touch "${auth_keys}"
+
+        # Single user case
+        if [ $total_users -eq 1 ]; then
+            while true; do
+                if [ ! -s "${auth_keys}" ]; then
+                    log "No SSH key found for ${user}. Adding new key (mandatory for single user)..."
+                    local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+                    if [ -n "$ssh_key" ]; then
+                        if validate_ssh_key "$ssh_key"; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                            break
+                        else
+                            warn "Invalid SSH key format. Please try again."
+                        fi
+                    else
+                        warn "SSH key cannot be empty for single user system. Please try again."
+                    fi
+                else
+                    log "Existing SSH key found for ${user}"
+                    cat "${auth_keys}"
+                    local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
+                    if [[ $replace_keys =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter new SSH public key: " "")
+                        if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                        fi
+                    fi
+                    break
+                fi
+            done
+        # Multiple users case
+        else
+            if [ "$user" = "$primary_user" ]; then
+                # Configure primary user
+                while true; do
+                    if [ ! -s "${auth_keys}" ]; then
+                        log "Configuring SSH key for primary user ${user}..."
+                        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+                        if [ -n "$ssh_key" ]; then
+                            if validate_ssh_key "$ssh_key"; then
+                                echo "${ssh_key}" > "${auth_keys}"
+                                break
+                            else
+                                warn "Invalid SSH key format. Please try again."
+                            fi
+                        else
+                            warn "SSH key cannot be empty for primary user. Please try again."
+                        fi
+                    else
+                        log "Existing SSH key found for ${user}:"
+                        cat "${auth_keys}"
+                        local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
+                        if [[ $replace_keys =~ ^[Yy]$ ]]; then
+                            local ssh_key=$(read_input "Enter new SSH public key: " "")
+                            if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
+                                echo "${ssh_key}" > "${auth_keys}"
+                            fi
+                        fi
+                        break
+                    fi
+                done
+            else
+                # Other users can skip SSH key
+                if [ ! -s "${auth_keys}" ]; then
+                    log "No SSH key found for ${user} (optional user)"
+                    local add_key=$(read_input "Would you like to add an SSH key for ${user}? (y/n): " "n")
+                    if [[ $add_key =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+                        if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                        fi
+                    fi
+                else
+                    log "Existing SSH keys for ${user}:"
+                    cat "${auth_keys}"
+                    local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
+                    if [[ $replace_keys =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter new SSH public key: " "")
+                        if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        # Set permissions
+        chown "${user}:${user}" "${ssh_dir}"
+        chmod 700 "${ssh_dir}"
+        chown "root:${user}" "${auth_keys}"
+        chmod 640 "${auth_keys}"
+    done
 }
 
 configure_root_bashrc() {
