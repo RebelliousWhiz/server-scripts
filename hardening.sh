@@ -446,61 +446,110 @@ configure_user_environment() {
 
 configure_system_parameters() {
     if [ "${is_lxc}" = false ]; then
-         # IPv6 configuration
-        local ipv6_default=$(grep "GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | grep -c "ipv6.disable=1" || echo "0")
-        local ipv6_linux=$(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | grep -v "DEFAULT" | grep -c "ipv6.disable=1" || echo "0")
+        # IPv6 configuration
+        local ipv6_default_disabled=0
+        local ipv6_linux_disabled=0
 
-        if [ "$ipv6_default" -eq 0 ] || [ "$ipv6_linux" -eq 0 ]; then
-            local disable_ipv6=$(read_input "IPv6 is not fully disabled. Disable IPv6? (y/n): " "n")
+        # Check if ipv6.disable=1 exists in either configuration
+        if grep -q "ipv6.disable=1" <(grep "GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub 2>/dev/null); then
+            ipv6_default_disabled=1
+        fi
+
+        if grep -q "ipv6.disable=1" <(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | grep -v "DEFAULT" 2>/dev/null); then
+            ipv6_linux_disabled=1
+        fi
+
+        # Only ask to disable if it's not already disabled in both places
+        if [ $ipv6_default_disabled -eq 1 ] && [ $ipv6_linux_disabled -eq 1 ]; then
+            log "IPv6 is already disabled in GRUB configuration"
+        else
+            local disable_ipv6=$(read_input "IPv6 is currently enabled. Disable IPv6? (y/n): " "n")
             if [[ $disable_ipv6 =~ ^[Yy]$ ]]; then
                 backup_file "/etc/default/grub"
                 
                 # Handle GRUB_CMDLINE_LINUX_DEFAULT
-                if [ "$ipv6_default" -eq 0 ]; then
-                    # Check if GRUB_CMDLINE_LINUX_DEFAULT has any existing value
-                    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=".*"' /etc/default/grub; then
-                        # Add space before new parameter if there's existing content
-                        sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/s/"$/ ipv6.disable=1"/' /etc/default/grub
+                if [ $ipv6_default_disabled -eq 0 ]; then
+                    # Get current value without quotes
+                    local default_value=$(grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | cut -d'"' -f2)
+                    if [ -n "$default_value" ]; then
+                        # Value exists, add with space
+                        sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=\".*\"/GRUB_CMDLINE_LINUX_DEFAULT=\"${default_value} ipv6.disable=1\"/" /etc/default/grub
                     else
-                        # No existing content, add parameter without space
-                        sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/s/"$/ipv6.disable=1"/' /etc/default/grub
+                        # No value, add without space
+                        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=1"/' /etc/default/grub
                     fi
                     log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX_DEFAULT"
                 fi
 
                 # Handle GRUB_CMDLINE_LINUX
-                if [ "$ipv6_linux" -eq 0 ]; then
-                    # Check if GRUB_CMDLINE_LINUX has any existing value
-                    if grep -q '^GRUB_CMDLINE_LINUX=".*"' /etc/default/grub; then
-                        # Add space before new parameter if there's existing content
-                        sed -i '/GRUB_CMDLINE_LINUX=/s/"$/ ipv6.disable=1"/' /etc/default/grub
+                if [ $ipv6_linux_disabled -eq 0 ]; then
+                    # Get current value without quotes
+                    local linux_value=$(grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub | cut -d'"' -f2)
+                    if [ -n "$linux_value" ]; then
+                        # Value exists, add with space
+                        sed -i "s/^GRUB_CMDLINE_LINUX=\".*\"/GRUB_CMDLINE_LINUX=\"${linux_value} ipv6.disable=1\"/" /etc/default/grub
                     else
-                        # No existing content, add parameter without space
-                        sed -i '/GRUB_CMDLINE_LINUX=/s/"$/ipv6.disable=1"/' /etc/default/grub
+                        # No value, add without space
+                        sed -i 's/^GRUB_CMDLINE_LINUX=""/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' /etc/default/grub
                     fi
                     log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX"
                 fi
 
                 update-grub
             else
-                if [ "$ipv6_default" -eq 0 ] && [ "$ipv6_linux" -eq 1 ]; then
+                if [ $ipv6_default_disabled -eq 0 ] && [ $ipv6_linux_disabled -eq 1 ]; then
                     warn "GRUB_CMDLINE_LINUX has ipv6.disable=1 but GRUB_CMDLINE_LINUX_DEFAULT doesn't"
-                elif [ "$ipv6_default" -eq 1 ] && [ "$ipv6_linux" -eq 0 ]; then
+                elif [ $ipv6_default_disabled -eq 1 ] && [ $ipv6_linux_disabled -eq 0 ]; then
                     warn "GRUB_CMDLINE_LINUX_DEFAULT has ipv6.disable=1 but GRUB_CMDLINE_LINUX doesn't"
                 fi
             fi
-        else
-            log "IPv6 is already disabled in GRUB configuration"
         fi
 
         # Time synchronization
-        local config_ntp=$(read_input "Configure NTP sync with time.nist.gov? (y/n): " "y")
-        if [[ $config_ntp =~ ^[Yy]$ ]]; then
-            systemctl stop systemd-timesyncd ntp chronyd 2>/dev/null || true
-            systemctl disable systemd-timesyncd ntp chronyd 2>/dev/null || true
-            apt-get install -y ntpdate
-            ntpdate -4 time.nist.gov
-            (crontab -l 2>/dev/null; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
+        local timesyncd_active=0
+        local ntp_active=0
+        local chrony_active=0
+        local ntp_cron_exists=0
+
+        # Check if services are active and enabled
+        if systemctl is-active systemd-timesyncd >/dev/null 2>&1 || systemctl is-enabled systemd-timesyncd >/dev/null 2>&1; then
+            timesyncd_active=1
+        fi
+        if systemctl is-active ntp >/dev/null 2>&1 || systemctl is-enabled ntp >/dev/null 2>&1; then
+            ntp_active=1
+        fi
+        if systemctl is-active chronyd >/dev/null 2>&1 || systemctl is-enabled chronyd >/dev/null 2>&1; then
+            chrony_active=1
+        fi
+
+        # Check if ntpdate cron job exists
+        if crontab -l 2>/dev/null | grep -q "ntpdate -4 -s time.nist.gov"; then
+            ntp_cron_exists=1
+        fi
+
+        if [ $timesyncd_active -eq 0 ] && [ $ntp_active -eq 0 ] && [ $chrony_active -eq 0 ] && [ $ntp_cron_exists -eq 1 ]; then
+            log "Time synchronization already configured with ntpdate"
+        else
+            local config_ntp=$(read_input "Configure NTP sync with time.nist.gov? (y/n): " "y")
+            if [[ $config_ntp =~ ^[Yy]$ ]]; then
+                # Stop and disable time sync services
+                systemctl stop systemd-timesyncd ntp chronyd 2>/dev/null || true
+                systemctl disable systemd-timesyncd ntp chronyd 2>/dev/null || true
+                
+                # Install ntpdate if not already installed
+                if ! command -v ntpdate >/dev/null 2>&1; then
+                    apt-get install -y ntpdate
+                fi
+
+                # Perform initial time sync
+                ntpdate -4 time.nist.gov
+
+                # Add cron job if it doesn't exist
+                if [ $ntp_cron_exists -eq 0 ]; then
+                    (crontab -l 2>/dev/null; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
+                    log "Added ntpdate cron job for time synchronization"
+                fi
+            fi
         fi
     fi
 
