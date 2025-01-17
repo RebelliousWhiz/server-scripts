@@ -608,7 +608,7 @@ configure_system_parameters() {
             fi
         fi
 
-        # Time synchronization
+          # Time synchronization
         local timesyncd_active=0
         local ntp_active=0
         local chrony_active=0
@@ -636,22 +636,32 @@ configure_system_parameters() {
             local config_ntp=$(read_input "Configure NTP sync with time.nist.gov? (y/n): " "y")
             if [[ $config_ntp =~ ^[Yy]$ ]]; then
                 # Stop and disable time sync services
+                log "Stopping and disabling existing time sync services..."
                 systemctl stop systemd-timesyncd ntp chronyd 2>/dev/null || true
                 systemctl disable systemd-timesyncd ntp chronyd 2>/dev/null || true
                 
                 # Install ntpdate if not already installed
                 if ! command -v ntpdate >/dev/null 2>&1; then
-                    apt-get install -y ntpdate
+                    log "Installing ntpdate..."
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y ntpdate
                 fi
 
-                # Perform initial time sync
-                ntpdate -4 time.nist.gov
+                # Perform initial time sync with timeout
+                log "Performing initial time sync..."
+                if timeout 30 ntpdate -4 time.nist.gov; then
+                    log "Time sync successful"
+                else
+                    warn "Time sync timed out or failed, continuing anyway"
+                fi
 
                 # Add cron job if it doesn't exist
                 if [ $ntp_cron_exists -eq 0 ]; then
-                    (crontab -l 2>/dev/null; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
+                    log "Adding ntpdate cron job..."
+                    (crontab -l 2>/dev/null | grep -v "ntpdate.*time.nist.gov"; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
                     log "Added ntpdate cron job for time synchronization"
                 fi
+                
+                log "Time synchronization configuration completed"
             fi
         fi
     fi
