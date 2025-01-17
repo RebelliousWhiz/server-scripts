@@ -183,14 +183,14 @@ detect_system() {
 remove_snap() {
     if [ "${distro}" != "ubuntu" ]; then
         return 0
-    }
+    fi
 
     log "Checking Snap packages..."
     
     if ! command -v snap >/dev/null 2>&1; then
         log "Snap is not installed on this system"
         return 0
-    }
+    fi
 
     log "Removing Snap and preventing its reinstallation..."
     
@@ -201,34 +201,49 @@ remove_snap() {
     
     # Remove snapd package
     log "Removing snapd package..."
-    apt-get remove --purge snapd -y || warn "Failed to remove snapd package"
-    apt-get autoremove --purge -y || warn "Failed to autoremove packages"
+    if ! apt-get remove --purge snapd -y; then
+        warn "Failed to remove snapd package"
+    fi
+
+    if ! apt-get autoremove --purge -y; then
+        warn "Failed to autoremove packages"
+    fi
 
     # Clean up snap directories
     log "Cleaning up snap directories..."
     local snap_dirs=("/snap" "/var/snap" "/var/lib/snapd" "/var/cache/snapd" "/usr/lib/snapd")
     for dir in "${snap_dirs[@]}"; do
         if [ -d "$dir" ]; then
-            rm -rf "$dir" || warn "Failed to remove directory: $dir"
+            if ! rm -rf "$dir"; then
+                warn "Failed to remove directory: $dir"
+            fi
         fi
     done
 
     # Prevent snapd from being installed again
     log "Blocking snap from future installation..."
-    cat > /etc/apt/preferences.d/nosnap.pref << EOF
+    if ! cat > /etc/apt/preferences.d/nosnap.pref << EOF
 Package: snapd
 Pin: release a=*
 Pin-Priority: -1
 EOF
+    then
+        warn "Failed to create nosnap preferences file"
+    fi
 
     # Remove snap-related apt source
     if [ -f /etc/apt/sources.list.d/snap-*.list ]; then
-        rm -f /etc/apt/sources.list.d/snap-*.list
-        log "Removed snap repository configuration"
+        if ! rm -f /etc/apt/sources.list.d/snap-*.list; then
+            warn "Failed to remove snap repository configuration"
+        else
+            log "Removed snap repository configuration"
+        fi
     fi
 
     # Update package list after removal
-    apt-get update || warn "Failed to update package lists"
+    if ! apt-get update; then
+        warn "Failed to update package lists"
+    fi
 
     log "Snap removal process completed"
     return 0
