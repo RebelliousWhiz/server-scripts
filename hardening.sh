@@ -608,7 +608,7 @@ configure_system_parameters() {
             fi
         fi
 
-          # Time synchronization
+         # Time synchronization
         local timesyncd_active=0
         local ntp_active=0
         local chrony_active=0
@@ -657,14 +657,40 @@ configure_system_parameters() {
                 # Add cron job if it doesn't exist
                 if [ $ntp_cron_exists -eq 0 ]; then
                     log "Adding ntpdate cron job..."
-                    (crontab -l 2>/dev/null | grep -v "ntpdate.*time.nist.gov"; echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov") | sort - | uniq - | crontab -
-                    log "Added ntpdate cron job for time synchronization"
+                    
+                    # Create temporary crontab file
+                    local temp_cron=$(mktemp)
+                    
+                    # Get existing crontab content
+                    crontab -l 2>/dev/null > "$temp_cron" || echo -n > "$temp_cron"
+                    
+                    # Remove any existing ntpdate entries
+                    sed -i '/ntpdate.*time.nist.gov/d' "$temp_cron"
+                    
+                    # Add new ntpdate entry
+                    echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov" >> "$temp_cron"
+                    
+                    # Install new crontab
+                    if crontab "$temp_cron"; then
+                        log "Added ntpdate cron job for time synchronization"
+                    else
+                        warn "Failed to install crontab"
+                        cat "$temp_cron"  # Show what we tried to install
+                    fi
+                    
+                    # Clean up
+                    rm -f "$temp_cron"
+                    
+                    # Verify crontab installation
+                    if ! crontab -l | grep -q "ntpdate -4 -s time.nist.gov"; then
+                        warn "Crontab verification failed, attempting direct installation"
+                        echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov" | crontab -
+                    fi
                 fi
                 
                 log "Time synchronization configuration completed"
             fi
         fi
-    fi
 
     # Sysctl configuration
     local modify_sysctl=$(read_input "Modify sysctl.conf? (y/n): " "y")
