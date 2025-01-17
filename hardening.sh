@@ -253,7 +253,7 @@ configure_user_ssh() {
     local total_users=$(ls -1 /home | wc -l)
     local primary_user=""
 
-    # Handle multiple users case
+    # Handle multiple users case first
     if [ $total_users -gt 1 ]; then
         log "Multiple users detected. Select user to configure SSH key first:"
         select user in $(ls /home); do
@@ -307,8 +307,8 @@ configure_user_ssh() {
         else
             if [ "$user" = "$primary_user" ]; then
                 # Configure primary user
-                while true; do
-                    if [ ! -s "${auth_keys}" ]; then
+                if [ ! -s "${auth_keys}" ]; then
+                    while true; do
                         log "Configuring SSH key for primary user ${user}..."
                         local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
                         if [ -n "$ssh_key" ]; then
@@ -321,31 +321,33 @@ configure_user_ssh() {
                         else
                             warn "SSH key cannot be empty for primary user. Please try again."
                         fi
-                    else
-                        log "Existing SSH key found for ${user}:"
-                        cat "${auth_keys}"
-                        local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
-                        if [[ $replace_keys =~ ^[Yy]$ ]]; then
-                            local ssh_key=$(read_input "Enter new SSH public key: " "")
-                            if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
-                                echo "${ssh_key}" > "${auth_keys}"
-                            fi
-                        fi
-                        break
-                    fi
-                done
-            else
-                # Other users can skip SSH key
-                if [ ! -s "${auth_keys}" ]; then
-                    log "No SSH key found for ${user} (optional user)"
-                    local add_key=$(read_input "Would you like to add an SSH key for ${user}? (y/n): " "n")
-                    if [[ $add_key =~ ^[Yy]$ ]]; then
-                        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+                    done
+                else
+                    log "Existing SSH key found for ${user}:"
+                    cat "${auth_keys}"
+                    local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
+                    if [[ $replace_keys =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter new SSH public key: " "")
                         if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
                             echo "${ssh_key}" > "${auth_keys}"
                         fi
                     fi
+                fi
+            else
+                # Skip SSH key configuration for non-primary users if key doesn't exist
+                if [ ! -s "${auth_keys}" ]; then
+                    log "No SSH key found for ${user} (optional user)"
+                    local add_key=$(read_input "Would you like to add an SSH key for ${user}? (y/n): " "n")
+                    if [[ ! $add_key =~ ^[Yy]$ ]]; then
+                        log "Skipping SSH key configuration for ${user}"
+                        continue
+                    fi
+                    local ssh_key=$(read_input "Enter SSH public key for ${user}: " "")
+                    if [ -n "$ssh_key" ] && validate_ssh_key "$ssh_key"; then
+                        echo "${ssh_key}" > "${auth_keys}"
+                    fi
                 else
+                    # Only handle existing keys
                     log "Existing SSH keys for ${user}:"
                     cat "${auth_keys}"
                     local replace_keys=$(read_input "Replace existing keys? (y/n): " "n")
