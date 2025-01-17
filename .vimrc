@@ -9,3 +9,4 @@ set shiftwidth=2
 set softtabstop=2
 set hlsearch
 set encoding=utf-8
+set autoindent
