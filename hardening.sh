@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 3.5
+# Version: 3.6
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="3.5"
+readonly SCRIPT_VERSION="3.6"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -394,9 +394,17 @@ fi'
     elif [ "${distro}" = "ubuntu" ]; then
         # Ubuntu specific configuration
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "$bashrc"
-        # Simply append the PS1 configuration at the end
-        echo 'PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'' >> "$bashrc"
-        log "Added root PS1 configuration to bashrc for Ubuntu"
+        
+        # Define the PS1 string we want to check/add
+        local ps1_string='PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"
+
+        # Check if PS1 configuration already exists
+        if ! grep -q "$ps1_string" "$bashrc"; then
+            echo "$ps1_string" >> "$bashrc"
+            log "Added root PS1 configuration to bashrc for Ubuntu"
+        else
+            log "PS1 configuration already exists in root bashrc"
+        fi
     fi
 }
 
