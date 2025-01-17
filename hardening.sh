@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 3.8
+# Version: 3.9
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="3.8"
+readonly SCRIPT_VERSION="3.9"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -555,6 +555,44 @@ configure_user_environment() {
     fi
 }
 
+configure_firewall() {
+    if [ "${is_lxc}" = false ]; then
+        local setup_ufw=$(read_input "Configure UFW firewall rules? (y/n): " "y")
+        if [[ $setup_ufw =~ ^[Yy]$ ]]; then
+            log "Installing and configuring UFW..."
+            
+            # Install UFW if not present
+            if ! command -v ufw >/dev/null 2>&1; then
+                DEBIAN_FRONTEND=noninteractive apt-get install -y ufw
+            fi
+
+            # Download UFW rules script
+            local ufw_script="/tmp/ufw.sh"
+            log "Downloading UFW configuration script..."
+            if wget -q "https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/ufw.sh" -O "$ufw_script"; then
+                chmod +x "$ufw_script"
+                
+                # Disable UFW before applying new rules
+                ufw disable >/dev/null 2>&1
+
+                # Execute UFW script
+                if bash "$ufw_script"; then
+                    # Enable UFW
+                    echo "y" | ufw enable
+                    log "UFW configuration completed successfully"
+                else
+                    warn "UFW configuration script execution failed"
+                fi
+                
+                # Clean up
+                rm -f "$ufw_script"
+            else
+                warn "Failed to download UFW configuration script"
+            fi
+        fi
+    fi
+}
+
 configure_system_parameters() {
     if [ "${is_lxc}" = false ]; then
         # IPv6 configuration
@@ -780,6 +818,7 @@ display_summary() {
     echo "    - Root login disabled"
     echo "    - Password authentication disabled"
     [ -n "${selected_sudo_user}" ] && echo "    - Sudo access configured for: ${selected_sudo_user}"
+    [ "${is_lxc}" = false ] && [ -x "$(command -v ufw)" ] && echo "    - UFW firewall configured"
     echo
     echo "  • System Optimizations:"
     echo "    - System packages updated"
@@ -856,6 +895,9 @@ main() {
 
     # Configure system SSH
     configure_system_ssh
+
+    # Configure firewall
+    configure_firewall
 
     # Configure system parameters
     configure_system_parameters
