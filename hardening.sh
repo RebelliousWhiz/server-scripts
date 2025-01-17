@@ -691,6 +691,7 @@ configure_system_parameters() {
                 log "Time synchronization configuration completed"
             fi
         fi
+    fi
 
     # Sysctl configuration
     local modify_sysctl=$(read_input "Modify sysctl.conf? (y/n): " "y")
