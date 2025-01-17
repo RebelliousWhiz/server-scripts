@@ -452,7 +452,9 @@ configure_system_ssh() {
     fi
 
     # SSH hardening
-    cat > /etc/ssh/sshd_config.d/hardening.conf << 'EOF'
+    local ssh_config="/etc/ssh/sshd_config"
+    local hardening_conf="/etc/ssh/sshd_config.d/hardening.conf"
+    local hardening_settings="
 LoginGraceTime 30
 MaxAuthTries 3
 MaxSessions 5
@@ -465,8 +467,20 @@ AuthenticationMethods publickey
 ClientAliveInterval 60
 ClientAliveCountMax 10
 TCPKeepAlive no
-Compression no
-EOF
+Compression no"
+
+    # Check if sshd_config.d directory exists (for newer systems)
+    if [ -d "/etc/ssh/sshd_config.d" ]; then
+        echo "$hardening_settings" > "$hardening_conf"
+        # Ensure Include directive exists
+        if ! grep -q "^Include /etc/ssh/sshd_config.d/\*.conf" "$ssh_config"; then
+            echo "Include /etc/ssh/sshd_config.d/*.conf" >> "$ssh_config"
+        fi
+    else
+        # For older systems, append directly to sshd_config
+        log "Adding hardening settings directly to sshd_config (Ubuntu 18.04)"
+        echo "$hardening_settings" >> "$ssh_config"
+    fi
 
     # Handle SSH service based on distribution and environment
     if [ "${distro}" = "debian" ]; then
@@ -481,8 +495,9 @@ EOF
             systemctl reload ssh
         fi
     else
-        # For Ubuntu (both LXC and standard), no reload needed
-        log "Ubuntu detected: SSH configuration updated, no service reload required"
+        # For Ubuntu (both LXC and standard)
+        log "Ubuntu detected: Reloading SSH service..."
+        systemctl reload ssh || systemctl restart ssh
     fi
 }
 
@@ -781,9 +796,11 @@ main() {
     # Configure sudo access
     configure_sudo_access
 
+    # Configure SSH for all users
+    configure_user_ssh
+
     # Configure users in /home/
     for user in $(ls /home); do
-        configure_user_ssh "${user}"
         configure_user_environment "${user}"
         configure_user_security "${user}"
     done
