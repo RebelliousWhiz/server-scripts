@@ -446,13 +446,51 @@ configure_user_environment() {
 
 configure_system_parameters() {
     if [ "${is_lxc}" = false ]; then
-        # IPv6 configuration
-        local disable_ipv6=$(read_input "Disable IPv6? (y/n): " "n")
-        if [[ $disable_ipv6 =~ ^[Yy]$ ]]; then
-            backup_file "/etc/default/grub"
-            sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/s/"$/ ipv6.disable=1"/' /etc/default/grub
-            sed -i '/GRUB_CMDLINE_LINUX=/s/"$/ ipv6.disable=1"/' /etc/default/grub
-            update-grub
+         # IPv6 configuration
+        local ipv6_default=$(grep "GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | grep -c "ipv6.disable=1" || echo "0")
+        local ipv6_linux=$(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | grep -v "DEFAULT" | grep -c "ipv6.disable=1" || echo "0")
+
+        if [ "$ipv6_default" -eq 0 ] || [ "$ipv6_linux" -eq 0 ]; then
+            local disable_ipv6=$(read_input "IPv6 is not fully disabled. Disable IPv6? (y/n): " "n")
+            if [[ $disable_ipv6 =~ ^[Yy]$ ]]; then
+                backup_file "/etc/default/grub"
+                
+                # Handle GRUB_CMDLINE_LINUX_DEFAULT
+                if [ "$ipv6_default" -eq 0 ]; then
+                    # Check if GRUB_CMDLINE_LINUX_DEFAULT has any existing value
+                    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=".*"' /etc/default/grub; then
+                        # Add space before new parameter if there's existing content
+                        sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/s/"$/ ipv6.disable=1"/' /etc/default/grub
+                    else
+                        # No existing content, add parameter without space
+                        sed -i '/GRUB_CMDLINE_LINUX_DEFAULT=/s/"$/ipv6.disable=1"/' /etc/default/grub
+                    fi
+                    log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX_DEFAULT"
+                fi
+
+                # Handle GRUB_CMDLINE_LINUX
+                if [ "$ipv6_linux" -eq 0 ]; then
+                    # Check if GRUB_CMDLINE_LINUX has any existing value
+                    if grep -q '^GRUB_CMDLINE_LINUX=".*"' /etc/default/grub; then
+                        # Add space before new parameter if there's existing content
+                        sed -i '/GRUB_CMDLINE_LINUX=/s/"$/ ipv6.disable=1"/' /etc/default/grub
+                    else
+                        # No existing content, add parameter without space
+                        sed -i '/GRUB_CMDLINE_LINUX=/s/"$/ipv6.disable=1"/' /etc/default/grub
+                    fi
+                    log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX"
+                fi
+
+                update-grub
+            else
+                if [ "$ipv6_default" -eq 0 ] && [ "$ipv6_linux" -eq 1 ]; then
+                    warn "GRUB_CMDLINE_LINUX has ipv6.disable=1 but GRUB_CMDLINE_LINUX_DEFAULT doesn't"
+                elif [ "$ipv6_default" -eq 1 ] && [ "$ipv6_linux" -eq 0 ]; then
+                    warn "GRUB_CMDLINE_LINUX_DEFAULT has ipv6.disable=1 but GRUB_CMDLINE_LINUX doesn't"
+                fi
+            fi
+        else
+            log "IPv6 is already disabled in GRUB configuration"
         fi
 
         # Time synchronization
