@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 3.6
+# Version: 3.7
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 22.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="3.6"
+readonly SCRIPT_VERSION="3.7"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -387,7 +387,9 @@ if ! shopt -oq posix; then
 fi'
 
         # Check if configurations exist and append if they don't
-        if ! grep -q "force_color_prompt=yes" "$bashrc"; then
+        if ! grep -q "force_color_prompt=yes" "$bashrc" && \
+           ! grep -q "PS1='.*\\\\u.*\\\\h.*\\\\w.*'" "$bashrc" && \
+           ! grep -q "bash-completion" "$bashrc"; then
             echo "$debian_config" >> "$bashrc"
             log "Added color prompt and bash completion to root bashrc"
         fi
@@ -399,7 +401,7 @@ fi'
         local ps1_string='PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"
 
         # Check if PS1 configuration already exists
-        if ! grep -q "$ps1_string" "$bashrc"; then
+        if ! grep -q "PS1='.*\\\\u.*\\\\h.*\\\\w.*'" "$bashrc"; then
             echo "$ps1_string" >> "$bashrc"
             log "Added root PS1 configuration to bashrc for Ubuntu"
         else
