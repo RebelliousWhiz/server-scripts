@@ -1511,71 +1511,41 @@ display_summary() {
     echo "    - Log file: ${LOG_FILE}"
 }
 
-system_updates_parallel() {
-    log "Performing system updates in parallel mode..."
+# Replace the system_updates_parallel function with a simpler, more reliable version:
+system_updates() {
+    log "Performing system updates..."
     
-    # Create temporary directory for apt operations
-    local apt_tmp=$(mktemp -d)
-    
-    # Update package lists with timeout and error handling
+    # Update package lists with retry mechanism
     log "Updating package lists..."
-    if ! timeout 120 apt-get update; then
-        warn "Package list update timed out or failed, trying alternative method"
-        # Try alternative update method with reduced sources
-        apt-get update -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 || true
-    fi
+    local retries=3
+    local success=false
     
-    # Get list of upgradable packages
-    local upgrade_list=$(mktemp)
-    apt-get --just-print upgrade 2>/dev/null | grep '^Inst' | awk '{print $2}' > "$upgrade_list"
-    
-    if [ -s "$upgrade_list" ]; then
-        local pkg_count=$(wc -l < "$upgrade_list")
-        log "Found $pkg_count packages to upgrade"
-        
-        # Determine optimal batch size based on available CPU cores
-        local cpu_count=$(nproc 2>/dev/null || echo 2)
-        local batch_size=$(( pkg_count / cpu_count ))
-        [ $batch_size -lt 5 ] && batch_size=5  # Minimum batch size
-        [ $batch_size -gt 20 ] && batch_size=20  # Maximum batch size
-        
-        # Prepare commands for parallel execution
-        local commands=()
-        local i=0
-        local batch_file=""
-        
-        while read -r pkg; do
-            if [ $((i % batch_size)) -eq 0 ]; then
-                batch_file="${apt_tmp}/batch_$((i / batch_size)).list"
-                > "$batch_file"
-                commands+=("DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade $(cat \"$batch_file\")")
-            fi
-            echo "$pkg" >> "$batch_file"
-            ((i++))
-        done < "$upgrade_list"
-        
-        # Execute package installation in parallel
-        if [ ${#commands[@]} -gt 0 ]; then
-            parallel_execute $cpu_count 600 "${commands[@]}"
-            local parallel_result=$?
-            
-            if [ $parallel_result -ne 0 ]; then
-                warn "Some parallel package updates failed, attempting sequential update"
-                DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-            fi
+    while [ $retries -gt 0 ] && [ "$success" = false ]; do
+        if timeout 120 apt-get update; then
+            success=true
+        else
+            retries=$((retries - 1))
+            warn "Package list update attempt failed, $retries retries left"
+            [ $retries -gt 0 ] && sleep 5
         fi
-    else
-        log "No packages need updating"
+    done
+    
+    if [ "$success" = false ]; then
+        warn "Package list update failed after multiple attempts, continuing with installation"
     fi
     
-    # Clean up
-    rm -f "$upgrade_list"
-    rm -rf "$apt_tmp"
+    # Perform upgrade with timeout
+    log "Upgrading packages..."
+    if ! timeout 600 apt-get upgrade -y; then
+        warn "Package upgrade timed out or failed, continuing anyway"
+    fi
     
     # Perform autoremove and clean
     log "Removing unnecessary packages and cleaning up..."
-    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
-    apt-get clean
+    apt-get autoremove -y || warn "Autoremove failed"
+    apt-get clean || warn "Clean failed"
+    
+    log "System update completed"
 }
 
 main() {
@@ -1623,16 +1593,17 @@ main() {
         fi
     fi
 
-    # System updates and package installation using optimized methods
+    # System updates and package installation
     if [ "${is_container}" = true ]; then
         # For containers, use standard update to minimize resource usage
         log "Using standard update for container environment"
         pkg_update
+        DEBIAN_FRONTEND=noninteractive apt-get upgrade -y || warn "Package upgrade failed"
         pkg_install "${PACKAGES[@]}"
     else
-        # For standard systems, use parallel updates
-        log "Using parallel updates for standard system"
-        system_updates_parallel
+        # For standard systems, use simplified updates
+        log "Using standard system update process"
+        system_updates
         pkg_install "${PACKAGES[@]}"
     fi
 
