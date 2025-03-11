@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 4.1
+# Version: 4.3
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 24.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="4.1"
+readonly SCRIPT_VERSION="4.3"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -1144,6 +1144,12 @@ configure_user_environment() {
         backup_file "${user_home}/.bashrc"
         sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "${user_home}/.bashrc"
         
+        # Add EDITOR=vim if not present
+        if ! grep -q "^export EDITOR=vim" "${user_home}/.bashrc"; then
+            echo "export EDITOR=vim" >> "${user_home}/.bashrc"
+            log "Added EDITOR=vim to .bashrc for ${user}"
+        fi
+        
         # Set custom prompt for non-root users
         if [ "$user" != "root" ]; then
             local ps1_config='PS1='"'"'\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"
@@ -1163,6 +1169,43 @@ configure_user_environment() {
     else
         rm -f "$temp_vimrc"
         warn "Failed to download valid .vimrc file for ${user}"
+    fi
+}
+
+lock_root_account() {
+    log "Locking root account for direct login..."
+    passwd -l root
+    
+    # Double-check if root is locked
+    if passwd -S root | grep -q "L"; then
+        log "Root account successfully locked"
+    else
+        warn "Failed to lock root account, attempting alternative method"
+        # Alternative method
+        usermod -p '!' root
+        if passwd -S root | grep -q "L\|!"; then
+            log "Root account locked using alternative method"
+        else
+            warn "Could not lock root account. Please check manually."
+        fi
+    fi
+}
+
+clean_sudoers_dir() {
+    log "Cleaning up all files in /etc/sudoers.d/..."
+    if [ -d "/etc/sudoers.d" ]; then
+        # Skip README file which is often required
+        find /etc/sudoers.d -type f -not -name README -exec rm -f {} \; 2>/dev/null || true
+        
+        # Verify files are gone
+        local remaining_files=$(find /etc/sudoers.d -type f -not -name README | wc -l)
+        if [ "$remaining_files" -eq 0 ]; then
+            log "Successfully removed all custom sudoers files"
+        else
+            warn "Some files in /etc/sudoers.d/ could not be removed"
+        fi
+    else
+        warn "/etc/sudoers.d/ directory not found"
     fi
 }
 
@@ -1648,20 +1691,23 @@ main() {
     # Configure system parameters
     configure_system_parameters
 
-    # Lock root account on Debian
-    if [ "${distro}" = "debian" ]; then
-        if [ -n "${selected_sudo_user:-}" ]; then
-            log "Testing sudo access..."
-            if su - "${selected_sudo_user}" -c "sudo whoami" >/dev/null 2>&1; then
-                log "Sudo access confirmed for ${selected_sudo_user}"
-                rm -f "/etc/sudoers.d/init-${selected_sudo_user}"
-                passwd -l root
-                log "Root account locked"
-                warn "Note: Sudo access now requires password"
-            else
-                error "Failed to verify sudo access"
-            fi
+    # Clean sudoers directory
+    clean_sudoers_dir
+
+    # Lock root account for all distributions
+    if [ -n "${selected_sudo_user:-}" ]; then
+        log "Testing sudo access before locking root..."
+        if su - "${selected_sudo_user}" -c "sudo whoami" >/dev/null 2>&1; then
+            log "Sudo access confirmed for ${selected_sudo_user}"
+            # Clean up temporary sudoers files
+            rm -f "/etc/sudoers.d/init-${selected_sudo_user}"
+            lock_root_account
+            warn "Note: Sudo access now requires password"
+        else
+            error "Failed to verify sudo access, cannot safely lock root account"
         fi
+    else
+        warn "No sudo user selected, not locking root account for safety"
     fi
 
     # Apply version-specific configurations
