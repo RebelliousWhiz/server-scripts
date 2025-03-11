@@ -763,6 +763,54 @@ service_stop() {
     esac
 }
 
+set_timezone() {
+    local timezone="Asia/Taipei"
+    log "Setting timezone to ${timezone}..."
+    
+    # First try with timedatectl (systemd systems)
+    if command_exists timedatectl; then
+        if timedatectl set-timezone "${timezone}"; then
+            log "Timezone set to ${timezone} using timedatectl"
+            return 0
+        else
+            warn "Failed to set timezone with timedatectl"
+        fi
+    fi
+    
+    # Fallback to legacy method
+    if [ -f "/usr/share/zoneinfo/${timezone}" ]; then
+        if [ -L /etc/localtime ]; then
+            # Remove existing link
+            rm -f /etc/localtime
+        elif [ -f /etc/localtime ]; then
+            # Back up existing file
+            backup_file /etc/localtime
+            rm -f /etc/localtime
+        fi
+        
+        # Create the symbolic link
+        ln -sf "/usr/share/zoneinfo/${timezone}" /etc/localtime
+        
+        # Update timezone file
+        echo "${timezone}" > /etc/timezone
+        log "Timezone set to ${timezone} using legacy method"
+        return 0
+    else
+        # Last resort - use debconf for Debian-based systems
+        if command_exists dpkg-reconfigure; then
+            log "Setting timezone using dpkg-reconfigure..."
+            echo "tzdata tzdata/Areas select Asia" | debconf-set-selections
+            echo "tzdata tzdata/Zones/Asia select Taipei" | debconf-set-selections
+            DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive tzdata
+            log "Timezone reconfigured using dpkg-reconfigure"
+            return 0
+        fi
+    fi
+    
+    warn "Failed to set timezone to ${timezone}"
+    return 1
+}
+
 remove_snap() {
     if [ "${distro}" != "ubuntu" ]; then
         return 0
@@ -1623,6 +1671,9 @@ main() {
     detect_environment
     detect_system
     detect_init_system
+
+    # Set timezone to Asia/Taipei
+    set_timezone
 
     # Remove snap from Ubuntu
     remove_snap
