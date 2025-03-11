@@ -1077,25 +1077,31 @@ configure_system_ssh() {
     log "Current SSH port: ${current_port}"
 
     # Change SSH port
-    local change_port=$(read_input "Change SSH port? (y/n): " "n" 30 "yes_no")
+     local change_port=$(read_input "Change SSH port? (y/n): " "n" 30 "yes_no")
     if [[ $change_port =~ ^[Yy]$ ]]; then
         local new_port=$(read_input "Enter new SSH port: " "$SSH_PORT_DEFAULT" 30 "port")
         
         # Additional check for port already in use
         if ! ss -tln | grep -q ":$new_port "; then
-            sed -i '/^Port /d' /etc/ssh/sshd_config
-            echo "Port ${new_port}" >> /etc/ssh/sshd_config
+            # Replace "#Port 22" line or add if not found
+            if grep -q "^#Port 22" /etc/ssh/sshd_config; then
+                sed -i "s/^#Port 22/Port ${new_port}/" /etc/ssh/sshd_config
+            elif grep -q "^Port " /etc/ssh/sshd_config; then
+                sed -i "s/^Port .*/Port ${new_port}/" /etc/ssh/sshd_config
+            else
+                # If no Port line exists at all, add it at the top
+                sed -i "1i Port ${new_port}" /etc/ssh/sshd_config
+            fi
             log "SSH port changed to: ${new_port}"
         else
             warn "Port $new_port is already in use. Keeping current port: ${current_port}"
         fi
     fi
 
-    # SSH hardening
+     # SSH hardening
     local ssh_config="/etc/ssh/sshd_config"
     local hardening_conf="/etc/ssh/sshd_config.d/hardening.conf"
-    local hardening_settings="
-LoginGraceTime 30
+    local hardening_settings="LoginGraceTime 30
 MaxAuthTries 3
 MaxSessions 5
 MaxStartups 3:50:10
