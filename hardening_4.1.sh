@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 4.0
+# Version: 4.1
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 24.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="4.0"
+readonly SCRIPT_VERSION="4.1"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -522,9 +522,9 @@ detect_init_system() {
 pkg_update() {
     log "Updating package lists..."
     if command -v apt-get >/dev/null 2>&1; then
-        apt-get update >/dev/null 2>&1
+        timeout 120 apt-get update || timeout 60 apt-get update -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 || warn "Package update failed, continuing anyway"
     elif command -v apt >/dev/null 2>&1; then
-        apt update >/dev/null 2>&1
+        timeout 120 apt update || timeout 60 apt update -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 || warn "Package update failed, continuing anyway"
     else
         error "No supported package manager found"
     fi
@@ -1517,13 +1517,17 @@ system_updates_parallel() {
     # Create temporary directory for apt operations
     local apt_tmp=$(mktemp -d)
     
-    # Update package lists
+    # Update package lists with timeout and error handling
     log "Updating package lists..."
-    pkg_update
+    if ! timeout 120 apt-get update; then
+        warn "Package list update timed out or failed, trying alternative method"
+        # Try alternative update method with reduced sources
+        apt-get update -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 || true
+    fi
     
     # Get list of upgradable packages
     local upgrade_list=$(mktemp)
-    apt-get --just-print upgrade | grep '^Inst' | awk '{print $2}' > "$upgrade_list"
+    apt-get --just-print upgrade 2>/dev/null | grep '^Inst' | awk '{print $2}' > "$upgrade_list"
     
     if [ -s "$upgrade_list" ]; then
         local pkg_count=$(wc -l < "$upgrade_list")
@@ -1622,10 +1626,12 @@ main() {
     # System updates and package installation using optimized methods
     if [ "${is_container}" = true ]; then
         # For containers, use standard update to minimize resource usage
+        log "Using standard update for container environment"
         pkg_update
         pkg_install "${PACKAGES[@]}"
     else
         # For standard systems, use parallel updates
+        log "Using parallel updates for standard system"
         system_updates_parallel
         pkg_install "${PACKAGES[@]}"
     fi
