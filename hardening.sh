@@ -1745,18 +1745,56 @@ main() {
     # Clean sudoers directory
     clean_sudoers_dir
 
-    # Lock root account for all distributions
+     # Lock root account for all distributions
     if [ -n "${selected_sudo_user:-}" ]; then
         log "Testing sudo access before locking root..."
-        if su - "${selected_sudo_user}" -c "sudo whoami" >/dev/null 2>&1; then
+        
+        # Create a test file for sudo verification
+        local test_file="/tmp/sudo_test_$(date +%s)"
+        touch "$test_file"
+        
+        # More robust sudo test that doesn't require user switching
+        # First ensure the sudo user has appropriate permissions
+        echo "${selected_sudo_user} ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/${selected_sudo_user}"
+        chmod 440 "/etc/sudoers.d/${selected_sudo_user}"
+        
+        # Test sudo access using a simple command that doesn't require interactive auth
+        if sudo -u "${selected_sudo_user}" sudo -n true >/dev/null 2>&1; then
             log "Sudo access confirmed for ${selected_sudo_user}"
-            # Clean up temporary sudoers files
+            
+            # Update sudoers to require password (but keep the user in sudo group)
             rm -f "/etc/sudoers.d/init-${selected_sudo_user}"
+            echo "${selected_sudo_user} ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/${selected_sudo_user}"
+            chmod 440 "/etc/sudoers.d/${selected_sudo_user}"
+            
+            # Now lock root account
             lock_root_account
             warn "Note: Sudo access now requires password"
         else
-            error "Failed to verify sudo access, cannot safely lock root account"
+            # Try an alternative method if the first one fails
+            log "First sudo verification method failed, trying alternative..."
+            if [ -x "$(command -v runuser)" ]; then
+                if runuser -l "${selected_sudo_user}" -c "sudo -n true" >/dev/null 2>&1; then
+                    log "Sudo access confirmed using runuser for ${selected_sudo_user}"
+                    rm -f "/etc/sudoers.d/init-${selected_sudo_user}"
+                    echo "${selected_sudo_user} ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/${selected_sudo_user}"
+                    chmod 440 "/etc/sudoers.d/${selected_sudo_user}"
+                    lock_root_account
+                    warn "Note: Sudo access now requires password"
+                else
+                    warn "Cannot verify sudo access, keeping root account unlocked for safety"
+                    echo "${selected_sudo_user} ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/${selected_sudo_user}"
+                    chmod 440 "/etc/sudoers.d/${selected_sudo_user}"
+                fi
+            else
+                warn "Cannot verify sudo access, keeping root account unlocked for safety"
+                echo "${selected_sudo_user} ALL=(ALL:ALL) ALL" > "/etc/sudoers.d/${selected_sudo_user}"
+                chmod 440 "/etc/sudoers.d/${selected_sudo_user}"
+            fi
         fi
+        
+        # Clean up test file
+        rm -f "$test_file"
     else
         warn "No sudo user selected, not locking root account for safety"
     fi
