@@ -1451,58 +1451,88 @@ configure_system_parameters() {
     local modify_sysctl=$(read_input "Modify sysctl.conf? (y/n): " "y" 30 "yes_no")
     if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
         backup_file "/etc/sysctl.conf"
-        log "Downloading sysctl configuration..."
-        
-        if ! wget -q "$SYSCTL_URL" -O /tmp/sysctl.conf; then
+    
+        echo "Select sysctl configuration profile:"
+        echo "1) sysctl.conf for 1G memory (optimized for systems with 1GB RAM)"
+        echo "2) sysctl.conf for 2G memory (optimized for systems with 2GB+ RAM)"
+        echo "3) sysctl.conf for LXC containers (container-optimized settings)"
+    
+        local sysctl_profile
+        while true; do
+            sysctl_profile=$(read_input "Enter your choice [1-3]: " "2" 30 "none")
+            if [[ "$sysctl_profile" =~ ^[1-3]$ ]]; then
+                break
+            else
+                warn "Invalid selection, please enter 1, 2, or 3"
+            fi
+        done
+    
+        local sysctl_url
+        case "$sysctl_profile" in
+            1)
+                sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-1G.conf"
+                log "Downloading sysctl configuration for 1G memory systems..."
+                ;;
+            2)
+                sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-2G.conf"
+                log "Downloading sysctl configuration for 2G+ memory systems..."
+                ;;
+            3)
+                sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-lxc.conf"
+                log "Downloading sysctl configuration for LXC containers..."
+                ;;
+        esac
+    
+        if ! wget -q "$sysctl_url" -O /tmp/sysctl.conf; then
             error "Failed to download sysctl configuration"
         fi
 
-        # Load necessary modules
-        log "Loading required kernel modules..."
-        modprobe nf_conntrack >/dev/null 2>&1 || true
+        # Load necessary modules (skip for LXC containers)
+        if [ "$sysctl_profile" != "3" ] && [ "${is_lxc}" = false ]; then
+            log "Loading required kernel modules..."
+            modprobe nf_conntrack >/dev/null 2>&1 || true
         
-        if [ "${is_lxc}" = false ]; then
             # Add modules to /etc/modules for persistence
             if ! grep -q "^nf_conntrack" /etc/modules; then
                 echo "nf_conntrack" >> /etc/modules
             fi
-            
+        
             # Create directory if it doesn't exist
             mkdir -p /etc/modules-load.d
-            
+        
             # Add module configuration
             echo "nf_conntrack" > /etc/modules-load.d/nf_conntrack.conf
         fi
 
         cp /tmp/sysctl.conf /etc/sysctl.conf
-        
+    
         # Apply sysctl parameters, ignoring errors
         log "Applying sysctl parameters..."
         sysctl -p 2>/dev/null || true
-        
-        rm -f /tmp/sysctl.conf
-    fi
-}
-
-apply_version_specific_configs() {
-    log "Applying version-specific configurations..."
     
-    # Ubuntu version-specific configurations
-    if [ "$distro" = "ubuntu" ]; then
-        if [ "${is_ubuntu_bionic}" = true ]; then
-            log "Applying Ubuntu 18.04 Bionic specific configurations"
-            # Add any Ubuntu 18.04 specific configurations here
-        elif [ "${is_ubuntu_focal}" = true ]; then
-            log "Applying Ubuntu 20.04 Focal specific configurations"
-            # Add any Ubuntu 20.04 specific configurations here
-        elif [ "${is_ubuntu_jammy}" = true ]; then
-            log "Applying Ubuntu 22.04 Jammy specific configurations"
-            # Add any Ubuntu 22.04 specific configurations here
-        elif [ "${is_ubuntu_noble}" = true ]; then
-            log "Applying Ubuntu 24.04 Noble specific configurations"
-            # Add any Ubuntu 24.04 specific configurations here
-        fi
+        rm -f /tmp/sysctl.conf
+        log "Sysctl configuration has been updated and applied"
     fi
+
+    apply_version_specific_configs() {
+        log "Applying version-specific configurations..."
+    
+        # Ubuntu version-specific configurations
+        if [ "$distro" = "ubuntu" ]; then
+            if [ "${is_ubuntu_bionic}" = true ]; then
+                log "Applying Ubuntu 18.04 Bionic specific configurations"
+                # Add any Ubuntu 18.04 specific configurations here
+            elif [ "${is_ubuntu_focal}" = true ]; then
+                log "Applying Ubuntu 20.04 Focal specific configurations"
+                # Add any Ubuntu 20.04 specific configurations here
+            elif [ "${is_ubuntu_jammy}" = true ]; then
+                log "Applying Ubuntu 22.04 Jammy specific configurations"
+                # Add any Ubuntu 22.04 specific configurations here
+            elif [ "${is_ubuntu_noble}" = true ]; then
+                log "Applying Ubuntu 24.04 Noble specific configurations"
+                # Add any Ubuntu 24.04 specific configurations here
+            fi
+        fi
     
     # Debian version-specific configurations
     if [ "$distro" = "debian" ]; then
