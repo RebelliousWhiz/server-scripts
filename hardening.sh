@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 4.3
+# Version: 4.4
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 24.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="4.3"
+readonly SCRIPT_VERSION="4.4"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -1451,65 +1451,71 @@ configure_system_parameters() {
     local modify_sysctl=$(read_input "Modify sysctl.conf? (y/n): " "y" 30 "yes_no")
     if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
         backup_file "/etc/sysctl.conf"
-    
+        
+        # Set default selection based on environment
+        local default_selection="2"
+        if [ "${is_lxc}" = true ] || [ "${is_container}" = true ]; then
+            default_selection="3"
+        fi
+        
         echo "Select sysctl configuration profile:"
-        echo "1) sysctl.conf for 1G memory (optimized for systems with 1GB RAM)"
-        echo "2) sysctl.conf for 2G memory (optimized for systems with 2GB+ RAM)"
-        echo "3) sysctl.conf for LXC containers (container-optimized settings)"
-    
+        echo "1) 1GB RAM profile - Optimized for servers with limited memory (1GB RAM)"
+        echo "2) 2GB+ RAM profile - Optimized for servers with 2GB+ RAM (recommended for most VPS)"
+        echo "3) LXC Container profile - Minimal settings optimized for containers"
+        
         local sysctl_profile
         while true; do
-            sysctl_profile=$(read_input "Enter your choice [1-3]: " "2" 30 "none")
+            sysctl_profile=$(read_input "Enter your choice [1-3]: " "$default_selection" 30 "none")
             if [[ "$sysctl_profile" =~ ^[1-3]$ ]]; then
                 break
             else
                 warn "Invalid selection, please enter 1, 2, or 3"
             fi
         done
-    
+        
         local sysctl_url
         case "$sysctl_profile" in
             1)
                 sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-1G.conf"
-                log "Downloading sysctl configuration for 1G memory systems..."
+                log "Downloading sysctl configuration for 1GB memory systems..."
                 ;;
             2)
                 sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-2G.conf"
-                log "Downloading sysctl configuration for 2G+ memory systems..."
+                log "Downloading sysctl configuration for 2GB+ memory systems..."
                 ;;
             3)
                 sysctl_url="https://raw.githubusercontent.com/RebelliousWhiz/server-scripts/refs/heads/main/sysctl-lxc.conf"
                 log "Downloading sysctl configuration for LXC containers..."
                 ;;
         esac
-    
+        
         if ! wget -q "$sysctl_url" -O /tmp/sysctl.conf; then
             error "Failed to download sysctl configuration"
         fi
 
-        # Load necessary modules (skip for LXC containers)
-        if [ "$sysctl_profile" != "3" ] && [ "${is_lxc}" = false ]; then
+        # Load necessary modules (only for non-LXC profiles on non-container systems)
+        if [ "$sysctl_profile" != "3" ] && [ "${is_container}" = false ]; then
             log "Loading required kernel modules..."
             modprobe nf_conntrack >/dev/null 2>&1 || true
-        
+            
             # Add modules to /etc/modules for persistence
             if ! grep -q "^nf_conntrack" /etc/modules; then
                 echo "nf_conntrack" >> /etc/modules
             fi
-        
+            
             # Create directory if it doesn't exist
             mkdir -p /etc/modules-load.d
-        
+            
             # Add module configuration
             echo "nf_conntrack" > /etc/modules-load.d/nf_conntrack.conf
         fi
 
         cp /tmp/sysctl.conf /etc/sysctl.conf
-    
+        
         # Apply sysctl parameters, ignoring errors
         log "Applying sysctl parameters..."
         sysctl -p 2>/dev/null || true
-    
+        
         rm -f /tmp/sysctl.conf
         log "Sysctl configuration has been updated and applied"
     fi
@@ -1517,22 +1523,22 @@ configure_system_parameters() {
     apply_version_specific_configs() {
         log "Applying version-specific configurations..."
     
-        # Ubuntu version-specific configurations
-        if [ "$distro" = "ubuntu" ]; then
-            if [ "${is_ubuntu_bionic}" = true ]; then
-                log "Applying Ubuntu 18.04 Bionic specific configurations"
-                # Add any Ubuntu 18.04 specific configurations here
-            elif [ "${is_ubuntu_focal}" = true ]; then
-                log "Applying Ubuntu 20.04 Focal specific configurations"
-                # Add any Ubuntu 20.04 specific configurations here
-            elif [ "${is_ubuntu_jammy}" = true ]; then
-                log "Applying Ubuntu 22.04 Jammy specific configurations"
-                # Add any Ubuntu 22.04 specific configurations here
-            elif [ "${is_ubuntu_noble}" = true ]; then
-                log "Applying Ubuntu 24.04 Noble specific configurations"
-                # Add any Ubuntu 24.04 specific configurations here
-            fi
+    # Ubuntu version-specific configurations
+    if [ "$distro" = "ubuntu" ]; then
+        if [ "${is_ubuntu_bionic}" = true ]; then
+            log "Applying Ubuntu 18.04 Bionic specific configurations"
+            # Add any Ubuntu 18.04 specific configurations here
+        elif [ "${is_ubuntu_focal}" = true ]; then
+            log "Applying Ubuntu 20.04 Focal specific configurations"
+            # Add any Ubuntu 20.04 specific configurations here
+        elif [ "${is_ubuntu_jammy}" = true ]; then
+            log "Applying Ubuntu 22.04 Jammy specific configurations"
+            # Add any Ubuntu 22.04 specific configurations here
+        elif [ "${is_ubuntu_noble}" = true ]; then
+            log "Applying Ubuntu 24.04 Noble specific configurations"
+            # Add any Ubuntu 24.04 specific configurations here
         fi
+    fi
     
     # Debian version-specific configurations
     if [ "$distro" = "debian" ]; then
