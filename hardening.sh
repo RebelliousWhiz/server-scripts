@@ -933,7 +933,7 @@ configure_user_ssh() {
                     break
                 fi
             done
-        # Multiple users case
+         # Multiple users case
         else
             if [ "$user" = "$primary_user" ]; then
                 # Configure primary user
@@ -950,6 +950,37 @@ configure_user_ssh() {
                     done
                 else
                     log "Existing SSH key found for ${user}:"
+                    cat "${auth_keys}"
+                    local replace_keys=$(read_input "Replace existing keys? (y/n): " "n" 30 "yes_no")
+                    if [[ $replace_keys =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter new SSH public key: " "" 60 "ssh_key" 5)
+                        if [ -n "$ssh_key" ]; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                            log "SSH key updated for ${user}"
+                        else
+                            log "Keeping existing SSH keys for ${user}"
+                        fi
+                    fi
+                fi
+            else
+                # Skip SSH key configuration for non-primary users if key doesn't exist
+                if [ ! -s "${auth_keys}" ]; then
+                    log "No SSH key found for ${user} (optional user)"
+                    local add_key=$(read_input "Would you like to add an SSH key for ${user}? (y/n): " "n" 30 "yes_no")
+                    if [[ $add_key =~ ^[Yy]$ ]]; then
+                        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "" 60 "ssh_key" 5)
+                        if [ -n "$ssh_key" ]; then
+                            echo "${ssh_key}" > "${auth_keys}"
+                            log "SSH key added for ${user}"
+                        else
+                            log "No key entered, skipping SSH key configuration for ${user}"
+                        fi
+                    else
+                        log "Skipping SSH key configuration for ${user}"
+                    fi
+                else
+                    # Only handle existing keys
+                    log "Existing SSH keys for ${user}:"
                     cat "${auth_keys}"
                     local replace_keys=$(read_input "Replace existing keys? (y/n): " "n" 30 "yes_no")
                     if [[ $replace_keys =~ ^[Yy]$ ]]; then
@@ -1592,7 +1623,7 @@ configure_system_parameters() {
 }
 
 configure_sudo_access() {
-    local sudo_users=$(getent group sudo | cut -d: -f4)
+    local sudo_users=$(getent group sudo | cut -d: -f4 | tr ',' ' ')
     if [ -z "${sudo_users}" ]; then
         log "No users in sudo group. Select user to add:"
         select user in $(get_real_users); do
@@ -1605,6 +1636,12 @@ configure_sudo_access() {
                 break
             fi
         done
+    else
+        # Users already exist in sudo group, set the first one as selected_sudo_user
+        log "Found existing sudo users: ${sudo_users}"
+        # Get the first user from the list
+        selected_sudo_user=$(echo "${sudo_users}" | awk '{print $1}')
+        log "Using existing sudo user: ${selected_sudo_user}"
     fi
 }
 
