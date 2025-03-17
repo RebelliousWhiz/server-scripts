@@ -906,7 +906,7 @@ configure_user_ssh() {
         mkdir -p "${ssh_dir}"
         touch "${auth_keys}"
 
-        # Single user case
+         # Single user case
         if [ $total_users -eq 1 ]; then
             while true; do
                 if [ ! -s "${auth_keys}" ]; then
@@ -950,37 +950,6 @@ configure_user_ssh() {
                     done
                 else
                     log "Existing SSH key found for ${user}:"
-                    cat "${auth_keys}"
-                    local replace_keys=$(read_input "Replace existing keys? (y/n): " "n" 30 "yes_no")
-                    if [[ $replace_keys =~ ^[Yy]$ ]]; then
-                        local ssh_key=$(read_input "Enter new SSH public key: " "" 60 "ssh_key" 5)
-                        if [ -n "$ssh_key" ]; then
-                            echo "${ssh_key}" > "${auth_keys}"
-                            log "SSH key updated for ${user}"
-                        else
-                            log "Keeping existing SSH keys for ${user}"
-                        fi
-                    fi
-                fi
-            else
-                # Skip SSH key configuration for non-primary users if key doesn't exist
-                if [ ! -s "${auth_keys}" ]; then
-                    log "No SSH key found for ${user} (optional user)"
-                    local add_key=$(read_input "Would you like to add an SSH key for ${user}? (y/n): " "n" 30 "yes_no")
-                    if [[ $add_key =~ ^[Yy]$ ]]; then
-                        local ssh_key=$(read_input "Enter SSH public key for ${user}: " "" 60 "ssh_key" 5)
-                        if [ -n "$ssh_key" ]; then
-                            echo "${ssh_key}" > "${auth_keys}"
-                            log "SSH key added for ${user}"
-                        else
-                            log "No key entered, skipping SSH key configuration for ${user}"
-                        fi
-                    else
-                        log "Skipping SSH key configuration for ${user}"
-                    fi
-                else
-                    # Only handle existing keys
-                    log "Existing SSH keys for ${user}:"
                     cat "${auth_keys}"
                     local replace_keys=$(read_input "Replace existing keys? (y/n): " "n" 30 "yes_no")
                     if [[ $replace_keys =~ ^[Yy]$ ]]; then
@@ -1600,25 +1569,25 @@ configure_system_parameters() {
             fi
         fi
 
-            # Init system specific configurations
-            case "$init_system" in
-                systemd)
-                    log "Applying systemd-specific configurations"
-                    # Add any systemd-specific configurations here
-                    ;;
-                sysvinit)
-                    log "Applying SysVinit-specific configurations"
-                    # Add any SysVinit-specific configurations here
-                    ;;
-                upstart)
-                    log "Applying Upstart-specific configurations"
-                    # Add any Upstart-specific configurations here
-                    ;;
-                openrc)
-                    log "Applying OpenRC-specific configurations"
-                    # Add any OpenRC-specific configurations here
-                    ;;
-            esac
+        # Init system specific configurations
+        case "$init_system" in
+            systemd)
+                log "Applying systemd-specific configurations"
+                # Add any systemd-specific configurations here
+                ;;
+            sysvinit)
+                log "Applying SysVinit-specific configurations"
+                # Add any SysVinit-specific configurations here
+                ;;
+            upstart)
+                log "Applying Upstart-specific configurations"
+                # Add any Upstart-specific configurations here
+                ;;
+            openrc)
+                log "Applying OpenRC-specific configurations"
+                # Add any OpenRC-specific configurations here
+                ;;
+        esac
     }
 }
 
