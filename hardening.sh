@@ -1523,51 +1523,52 @@ configure_system_parameters() {
     apply_version_specific_configs() {
         log "Applying version-specific configurations..."
     
-    # Ubuntu version-specific configurations
-    if [ "$distro" = "ubuntu" ]; then
-        if [ "${is_ubuntu_bionic}" = true ]; then
-            log "Applying Ubuntu 18.04 Bionic specific configurations"
-            # Add any Ubuntu 18.04 specific configurations here
-        elif [ "${is_ubuntu_focal}" = true ]; then
-            log "Applying Ubuntu 20.04 Focal specific configurations"
-            # Add any Ubuntu 20.04 specific configurations here
-        elif [ "${is_ubuntu_jammy}" = true ]; then
-            log "Applying Ubuntu 22.04 Jammy specific configurations"
-            # Add any Ubuntu 22.04 specific configurations here
-        elif [ "${is_ubuntu_noble}" = true ]; then
-            log "Applying Ubuntu 24.04 Noble specific configurations"
-            # Add any Ubuntu 24.04 specific configurations here
+        # Ubuntu version-specific configurations
+        if [ "$distro" = "ubuntu" ]; then
+            if [ "${is_ubuntu_bionic}" = true ]; then
+                log "Applying Ubuntu 18.04 Bionic specific configurations"
+                # Add any Ubuntu 18.04 specific configurations here
+            elif [ "${is_ubuntu_focal}" = true ]; then
+                log "Applying Ubuntu 20.04 Focal specific configurations"
+                # Add any Ubuntu 20.04 specific configurations here
+            elif [ "${is_ubuntu_jammy}" = true ]; then
+                log "Applying Ubuntu 22.04 Jammy specific configurations"
+                # Add any Ubuntu 22.04 specific configurations here
+            elif [ "${is_ubuntu_noble}" = true ]; then
+                log "Applying Ubuntu 24.04 Noble specific configurations"
+                # Add any Ubuntu 24.04 specific configurations here
+            fi
         fi
-    fi
     
-    # Debian version-specific configurations
-    if [ "$distro" = "debian" ]; then
-        if [ "${is_debian_buster}" = "true" ]; then
-            log "Applying Debian 10 Buster specific configurations"
-            # Add any Debian 10 specific configurations here
-        elif [ "${is_debian_bullseye}" = "true" ]; then
-            log "Applying Debian 11 Bullseye specific configurations"
-            # Add any Debian 11 specific configurations here
-        elif [ "${is_debian_bookworm}" = "true" ]; then
-            log "Applying Debian 12 Bookworm specific configurations"
-            # Add any Debian 12 specific configurations here
+        # Debian version-specific configurations
+        if [ "$distro" = "debian" ]; then
+            if [ "${is_debian_buster}" = "true" ]; then
+                log "Applying Debian 10 Buster specific configurations"
+                # Add any Debian 10 specific configurations here
+            elif [ "${is_debian_bullseye}" = "true" ]; then
+                log "Applying Debian 11 Bullseye specific configurations"
+                # Add any Debian 11 specific configurations here
+            elif [ "${is_debian_bookworm}" = "true" ]; then
+                log "Applying Debian 12 Bookworm specific configurations"
+                # Add any Debian 12 specific configurations here
+            fi
         fi
-    fi
     
-    # Container-specific configurations
-    if [ "$is_container" = "true" ]; then
-        log "Applying container-specific configurations"
-        if [ "$is_lxc" = "true" ]; then
-            log "Applying LXC-specific configurations"
-            # Add any LXC-specific configurations here
-        elif [ "$is_docker" = "true" ]; then
-            log "Applying Docker-specific configurations"
-            # Add any Docker-specific configurations here
-        elif [ "$is_openvz" = "true" ]; then
-            log "Applying OpenVZ-specific configurations"
-            # Add any OpenVZ-specific configurations here
+        # Container-specific configurations
+        if [ "$is_container" = "true" ]; then
+            log "Applying container-specific configurations"
+            if [ "$is_lxc" = "true" ]; then
+                log "Applying LXC-specific configurations"
+                # Add any LXC-specific configurations here
+            elif [ "$is_docker" = "true" ]; then
+                log "Applying Docker-specific configurations"
+                # Add any Docker-specific configurations here
+            elif [ "$is_openvz" = "true" ]; then
+                log "Applying OpenVZ-specific configurations"
+                # Add any OpenVZ-specific configurations here
+            fi
         fi
-    fi
+    }
     
     # Init system specific configurations
     case "$init_system" in
