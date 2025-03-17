@@ -1568,27 +1568,27 @@ configure_system_parameters() {
                 # Add any OpenVZ-specific configurations here
             fi
         fi
+
+            # Init system specific configurations
+            case "$init_system" in
+                systemd)
+                    log "Applying systemd-specific configurations"
+                    # Add any systemd-specific configurations here
+                    ;;
+                sysvinit)
+                    log "Applying SysVinit-specific configurations"
+                    # Add any SysVinit-specific configurations here
+                    ;;
+                upstart)
+                    log "Applying Upstart-specific configurations"
+                    # Add any Upstart-specific configurations here
+                    ;;
+                openrc)
+                    log "Applying OpenRC-specific configurations"
+                    # Add any OpenRC-specific configurations here
+                    ;;
+            esac
     }
-    
-    # Init system specific configurations
-    case "$init_system" in
-        systemd)
-            log "Applying systemd-specific configurations"
-            # Add any systemd-specific configurations here
-            ;;
-        sysvinit)
-            log "Applying SysVinit-specific configurations"
-            # Add any SysVinit-specific configurations here
-            ;;
-        upstart)
-            log "Applying Upstart-specific configurations"
-            # Add any Upstart-specific configurations here
-            ;;
-        openrc)
-            log "Applying OpenRC-specific configurations"
-            # Add any OpenRC-specific configurations here
-            ;;
-    esac
 }
 
 configure_sudo_access() {
