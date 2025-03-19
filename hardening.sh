@@ -1013,6 +1013,7 @@ configure_root_bashrc() {
         local debian_config='force_color_prompt=yes
 PS1='"'"'${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;32m\]@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '"'"'
 alias ls='"'"'ls --color=auto'"'"'
+alias grep='"'"'grep --color=auto'"'"'
 if ! shopt -oq posix; then
   if [ -f /usr/share/bash-completion/bash_completion ]; then
     . /usr/share/bash-completion/bash_completion
