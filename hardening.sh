@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Server Initialization and Hardening Script
-# Version: 4.4
+# Version: 4.5
 # Description: Initializes and hardens Debian/Ubuntu systems
 # Supports: Debian 12, Ubuntu 24.04, and their derivatives
 # Environment: Bare metal, VM, and LXC containers
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration Variables
-readonly SCRIPT_VERSION="4.4"
+readonly SCRIPT_VERSION="4.5"
 readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
@@ -1203,6 +1203,12 @@ configure_user_environment() {
         if ! grep -q "^export EDITOR=vim" "${user_home}/.bashrc"; then
             echo "export EDITOR=vim" >> "${user_home}/.bashrc"
             log "Added EDITOR=vim to .bashrc for ${user}"
+        fi
+
+        # Add grep color alias if not present
+        if ! grep -q "^alias grep='grep --color=auto'" "${user_home}/.bashrc"; then
+            echo "alias grep='grep --color=auto'" >> "${user_home}/.bashrc"
+            log "Added grep color alias to .bashrc for ${user}"
         fi
         
         # Set custom prompt for non-root users
