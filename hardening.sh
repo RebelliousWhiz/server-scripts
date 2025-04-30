@@ -1313,16 +1313,13 @@ configure_system_parameters() {
         # IPv6 configuration
         local ipv6_default_disabled=0
         local ipv6_linux_disabled=0
-
         # Check if ipv6.disable=1 exists in either configuration
         if grep -q "ipv6.disable=1" <(grep "GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub 2>/dev/null); then
             ipv6_default_disabled=1
         fi
-
         if grep -q "ipv6.disable=1" <(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | grep -v "DEFAULT" 2>/dev/null); then
             ipv6_linux_disabled=1
         fi
-
         # Only ask to disable if it's not already disabled in both places
         if [ $ipv6_default_disabled -eq 1 ] && [ $ipv6_linux_disabled -eq 1 ]; then
             log "IPv6 is already disabled in GRUB configuration"
@@ -1330,7 +1327,6 @@ configure_system_parameters() {
             local disable_ipv6=$(read_input "IPv6 is currently enabled. Disable IPv6? (y/n): " "n" 30 "yes_no")
             if [[ $disable_ipv6 =~ ^[Yy]$ ]]; then
                 backup_file "/etc/default/grub"
-                
                 # Handle GRUB_CMDLINE_LINUX_DEFAULT
                 if [ $ipv6_default_disabled -eq 0 ]; then
                     # Get current value without quotes
@@ -1344,7 +1340,6 @@ configure_system_parameters() {
                     fi
                     log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX_DEFAULT"
                 fi
-
                 # Handle GRUB_CMDLINE_LINUX
                 if [ $ipv6_linux_disabled -eq 0 ]; then
                     # Get current value without quotes
@@ -1358,7 +1353,6 @@ configure_system_parameters() {
                     fi
                     log "Added ipv6.disable=1 to GRUB_CMDLINE_LINUX"
                 fi
-
                 update-grub
             else
                 if [ $ipv6_default_disabled -eq 0 ] && [ $ipv6_linux_disabled -eq 1 ]; then
@@ -1368,13 +1362,11 @@ configure_system_parameters() {
                 fi
             fi
         fi
-
          # Time synchronization
         local timesyncd_active=0
         local ntp_active=0
         local chrony_active=0
-        local ntp_cron_exists=0
-
+        
         # Check if services are active and enabled
         if systemctl is-active systemd-timesyncd >/dev/null 2>&1 || systemctl is-enabled systemd-timesyncd >/dev/null 2>&1; then
             timesyncd_active=1
@@ -1385,91 +1377,79 @@ configure_system_parameters() {
         if systemctl is-active chronyd >/dev/null 2>&1 || systemctl is-enabled chronyd >/dev/null 2>&1; then
             chrony_active=1
         fi
-
-        # Check if ntpdate cron job exists
-        if crontab -l 2>/dev/null | grep -q "ntpdate -4 -s time.nist.gov"; then
-            ntp_cron_exists=1
-        fi
-
-        if [ $timesyncd_active -eq 0 ] && [ $ntp_active -eq 0 ] && [ $chrony_active -eq 0 ] && [ $ntp_cron_exists -eq 1 ]; then
-            log "Time synchronization already configured with ntpdate"
-        else
-            local config_ntp=$(read_input "Configure NTP sync with time.nist.gov? (y/n): " "y" 30 "yes_no")
-            if [[ $config_ntp =~ ^[Yy]$ ]]; then
-                # Stop and disable time sync services
+        
+        # Skip time sync configuration for LXC containers
+        if [ "${is_lxc}" = false ]; then
+            local config_chrony=$(read_input "Configure Chrony time sync with time.nist.gov? (y/n): " "y" 30 "yes_no")
+            if [[ $config_chrony =~ ^[Yy]$ ]]; then
+                # Stop and disable other time sync services
                 log "Stopping and disabling existing time sync services..."
-                systemctl stop systemd-timesyncd ntp chronyd 2>/dev/null || true
-                systemctl disable systemd-timesyncd ntp chronyd 2>/dev/null || true
+                systemctl stop systemd-timesyncd ntp 2>/dev/null || true
+                systemctl disable systemd-timesyncd ntp 2>/dev/null || true
                 
-                # Install ntpdate if not already installed
-                if ! command -v ntpdate >/dev/null 2>&1; then
-                    log "Installing ntpdate..."
-                    DEBIAN_FRONTEND=noninteractive apt-get install -y ntpdate
+                # Install ntpdate for initial sync and chrony for continuous sync
+                if ! command -v ntpdate >/dev/null 2>&1 || ! command -v chronyc >/dev/null 2>&1; then
+                    log "Installing ntpdate and chrony..."
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y ntpdate chrony
                 fi
-
+                
                 # Perform initial time sync with timeout
-                log "Performing initial time sync..."
+                log "Performing initial time sync with ntpdate..."
                 if timeout 30 ntpdate -4 time.nist.gov; then
-                    log "Time sync successful"
+                    log "Initial time sync successful"
                 else
-                    warn "Time sync timed out or failed, continuing anyway"
-                fi
-
-                # Add cron job if it doesn't exist
-                if [ $ntp_cron_exists -eq 0 ]; then
-                    log "Adding ntpdate cron job..."
-                    
-                    # Create temporary crontab file
-                    local temp_cron=$(mktemp)
-                    
-                    # Get existing crontab content
-                    crontab -l 2>/dev/null > "$temp_cron" || echo -n > "$temp_cron"
-                    
-                    # Remove any existing ntpdate entries
-                    sed -i '/ntpdate.*time.nist.gov/d' "$temp_cron"
-                    
-                    # Add new ntpdate entry
-                    echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov" >> "$temp_cron"
-                    
-                    # Install new crontab
-                    if crontab "$temp_cron"; then
-                        log "Added ntpdate cron job for time synchronization"
-                    else
-                        warn "Failed to install crontab"
-                        cat "$temp_cron"  # Show what we tried to install
-                    fi
-                    
-                    # Clean up
-                    rm -f "$temp_cron"
-                    
-                    # Verify crontab installation
-                    if ! crontab -l | grep -q "ntpdate -4 -s time.nist.gov"; then
-                        warn "Crontab verification failed, attempting direct installation"
-                        echo "0 */6 * * * /usr/sbin/ntpdate -4 -s time.nist.gov" | crontab -
-                    fi
+                    warn "Initial time sync timed out or failed, continuing anyway"
                 fi
                 
-                log "Time synchronization configuration completed"
+                # Configure chrony
+                local chrony_conf="/etc/chrony/chrony.conf"
+                if [ -f "$chrony_conf" ]; then
+                    backup_file "$chrony_conf"
+                    
+                    # Comment out all existing server lines
+                    log "Commenting out pre-defined time servers in chrony config..."
+                    sed -i 's/^server/#server/g' "$chrony_conf"
+                    
+                    # Add our time server if not already there
+                    if ! grep -q "^server time.nist.gov iburst minpoll 6 maxpoll 10" "$chrony_conf"; then
+                        log "Adding time.nist.gov as primary time source..."
+                        echo "server time.nist.gov iburst minpoll 6 maxpoll 10" >> "$chrony_conf"
+                    fi
+                    
+                    # Restart chrony service
+                    log "Restarting chrony service..."
+                    service_enable "chronyd"
+                    service_restart "chronyd"
+                    
+                    # Check chrony status
+                    if systemctl is-active chronyd >/dev/null 2>&1; then
+                        log "Chrony time synchronization is active and running"
+                    else
+                        warn "Chrony service is not running, time sync may not work properly"
+                    fi
+                else
+                    warn "Chrony configuration file not found at $chrony_conf"
+                fi
+                
+                log "Time synchronization configuration with chrony completed"
             fi
+        else
+            log "Skipping time sync configuration for LXC container"
         fi
     fi
-
     # Sysctl configuration
     local modify_sysctl=$(read_input "Modify sysctl.conf? (y/n): " "y" 30 "yes_no")
     if [[ $modify_sysctl =~ ^[Yy]$ ]]; then
         backup_file "/etc/sysctl.conf"
-        
         # Set default selection based on environment
         local default_selection="2"
         if [ "${is_lxc}" = true ] || [ "${is_container}" = true ]; then
             default_selection="3"
         fi
-        
         echo "Select sysctl configuration profile:"
         echo "1) 1GB RAM profile - Optimized for servers with limited memory (1GB RAM)"
         echo "2) 2GB+ RAM profile - Optimized for servers with 2GB+ RAM (recommended for most VPS)"
         echo "3) LXC Container profile - Minimal settings optimized for containers"
-        
         local sysctl_profile
         while true; do
             sysctl_profile=$(read_input "Enter your choice [1-3]: " "$default_selection" 30 "none")
@@ -1479,7 +1459,6 @@ configure_system_parameters() {
                 warn "Invalid selection, please enter 1, 2, or 3"
             fi
         done
-        
         local sysctl_url
         case "$sysctl_profile" in
             1)
@@ -1495,41 +1474,31 @@ configure_system_parameters() {
                 log "Downloading sysctl configuration for LXC containers..."
                 ;;
         esac
-        
         if ! wget -q "$sysctl_url" -O /tmp/sysctl.conf; then
             error "Failed to download sysctl configuration"
         fi
-
         # Load necessary modules (only for non-LXC profiles on non-container systems)
         if [ "$sysctl_profile" != "3" ] && [ "${is_container}" = false ]; then
             log "Loading required kernel modules..."
             modprobe nf_conntrack >/dev/null 2>&1 || true
-            
             # Add modules to /etc/modules for persistence
             if ! grep -q "^nf_conntrack" /etc/modules; then
                 echo "nf_conntrack" >> /etc/modules
             fi
-            
             # Create directory if it doesn't exist
             mkdir -p /etc/modules-load.d
-            
             # Add module configuration
             echo "nf_conntrack" > /etc/modules-load.d/nf_conntrack.conf
         fi
-
         cp /tmp/sysctl.conf /etc/sysctl.conf
-        
         # Apply sysctl parameters, ignoring errors
         log "Applying sysctl parameters..."
         sysctl -p 2>/dev/null || true
-        
         rm -f /tmp/sysctl.conf
         log "Sysctl configuration has been updated and applied"
     fi
-
     apply_version_specific_configs() {
         log "Applying version-specific configurations..."
-    
         # Ubuntu version-specific configurations
         if [ "$distro" = "ubuntu" ]; then
             if [ "${is_ubuntu_bionic}" = true ]; then
@@ -1546,7 +1515,6 @@ configure_system_parameters() {
                 # Add any Ubuntu 24.04 specific configurations here
             fi
         fi
-    
         # Debian version-specific configurations
         if [ "$distro" = "debian" ]; then
             if [ "${is_debian_buster}" = "true" ]; then
@@ -1560,7 +1528,6 @@ configure_system_parameters() {
                 # Add any Debian 12 specific configurations here
             fi
         fi
-    
         # Container-specific configurations
         if [ "$is_container" = "true" ]; then
             log "Applying container-specific configurations"
@@ -1575,7 +1542,6 @@ configure_system_parameters() {
                 # Add any OpenVZ-specific configurations here
             fi
         fi
-
         # Init system specific configurations
         case "$init_system" in
             systemd)
