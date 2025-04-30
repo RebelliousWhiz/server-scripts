@@ -1409,10 +1409,12 @@ configure_system_parameters() {
                     # Comment out all existing server lines
                     log "Commenting out pre-defined time servers in chrony config..."
                     sed -i 's/^server/#server/g' "$chrony_conf"
+                    sed -i 's/^pool/#pool/g' "$chrony_conf"
                     
                     # Add our time server if not already there
                     if ! grep -q "^server time.nist.gov iburst minpoll 6 maxpoll 10" "$chrony_conf"; then
                         log "Adding time.nist.gov as primary time source..."
+                        echo -e "\n# Primary NTP server configured by server initialization script" >> "$chrony_conf"
                         echo "server time.nist.gov iburst minpoll 6 maxpoll 10" >> "$chrony_conf"
                     fi
                     
