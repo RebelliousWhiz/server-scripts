@@ -1374,7 +1374,7 @@ configure_system_parameters() {
         if systemctl is-active ntp >/dev/null 2>&1 || systemctl is-enabled ntp >/dev/null 2>&1; then
             ntp_active=1
         fi
-        if systemctl is-active chronyd >/dev/null 2>&1 || systemctl is-enabled chronyd >/dev/null 2>&1; then
+        if systemctl is-active chrony >/dev/null 2>&1 || systemctl is-enabled chrony >/dev/null 2>&1; then
             chrony_active=1
         fi
         
@@ -1418,11 +1418,11 @@ configure_system_parameters() {
                     
                     # Restart chrony service
                     log "Restarting chrony service..."
-                    service_enable "chronyd"
-                    service_restart "chronyd"
+                    service_enable "chrony"
+                    service_restart "chrony"
                     
                     # Check chrony status
-                    if systemctl is-active chronyd >/dev/null 2>&1; then
+                    if systemctl is-active chrony >/dev/null 2>&1; then
                         log "Chrony time synchronization is active and running"
                     else
                         warn "Chrony service is not running, time sync may not work properly"
