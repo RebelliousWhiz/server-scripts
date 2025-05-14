@@ -15,7 +15,8 @@ IFS=$'\n\t'
 
 # Configuration Variables
 readonly SCRIPT_VERSION="4.5"
-readonly PACKAGES=(curl rsyslog wget socat bash-completion wireguard vim sudo)
+readonly BASE_PACKAGES=(curl rsyslog wget socat bash-completion vim sudo)
+declare -a PACKAGES=()
 readonly SSH_PORT_DEFAULT=22
 readonly BACKUP_DIR="/root/.script_backups/$(date +%Y%m%d_%H%M%S)"
 readonly LOG_FILE="/var/log/server_init.log"
@@ -298,6 +299,11 @@ detect_environment() {
     export is_docker
     export is_openvz
     export is_container
+    PACKAGES=(${BASE_PACKAGES[@]})
+    if [ "${is_lxc}" != true ]; then
+        # Add wireguard only for non-LXC environments
+        PACKAGES+=(wireguard)
+    fi
     log "Environment detection: LXC=$is_lxc, Docker=$is_docker, OpenVZ=$is_openvz, Container=$is_container"
 }
 
